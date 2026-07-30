@@ -36,9 +36,9 @@ CSS = """
 html, body, [class*="css"], .stApp { font-family: 'Inter', system-ui, sans-serif; }
 h1, h2, h3 { font-family: 'Space Grotesk', sans-serif; letter-spacing:-0.01em; color:#14242E; }
 .block-container { padding-top: 2.2rem; max-width: 1300px; }
-.hero-eyebrow { font:600 12px 'Space Grotesk'; letter-spacing:.18em; text-transform:uppercase; color:#0E7C86; }
-.hero-title { font:700 30px 'Space Grotesk'; color:#14242E; margin:.1rem 0 .2rem; }
-.hero-sub { color:#5C6B73; font-size:14px; margin-bottom:.4rem; }
+.hero-eyebrow { font:700 13px 'Space Grotesk'; letter-spacing:.14em; text-transform:uppercase; color:#0E7C86; padding-top:1rem; margin-bottom:.15rem; }
+.hero-title { font:700 34px 'Space Grotesk'; color:#14242E; letter-spacing:-.01em; margin:0 0 .35rem; line-height:1.15; }
+.hero-sub { font:400 14px Inter, sans-serif; color:#6B7A82; margin-bottom:.6rem; line-height:1.45; max-width:70ch; }
 /* verdict strip */
 .verdict { display:flex; align-items:center; gap:20px; border:1px solid #E3E8EC;
   border-left:6px solid var(--vc); border-radius:12px; padding:14px 20px; background:#fff;

@@ -1,0 +1,88 @@
+# =====================================================================
+# REAL tier-tagged scenario — CO2 -> CO electrolysis (Ag catalyst),
+# renewable-powered, Australian context. Load in the GUI:
+#   sidebar -> "Load tier-tagged scenario (YAML)"
+#
+# Every value is sourced (see `source:` fields). Values are real but
+# route/scale dependent — treat ESTIMATED-tier items (esp. CAPEX) as
+# wide. Tiers set the Monte-Carlo noise floor automatically.
+#
+# Sense-check at these values: E_el ~ 7 kWh/kg CO, LCOP ~ 0.77 $/kg,
+# net abatement > 0, MAC ~ 600 $/t CO2. So it reads "Marginal" at a
+# 0.30 $/kg ($300/t) carbon price and "Feasible" above ~0.6 $/kg.
+# Switch grid_intensity to 0.66 (NSW grid, NGA 2025) to see it flip to
+# NOT climate-positive — the utilisation-on-fossil-grid lesson.
+# =====================================================================
+
+reaction: co                      # CO2 -> CO (2e-); sets n_electrons, molar_mass, m_co2
+m_h2: 0.0
+c_h2: 0.0
+disc_rate: 0.08                   # standard project discount rate
+lifetime_yr: 20                   # standard plant life
+rectifier_eff: 0.95
+
+# --- performance (electrochemical CO2RR to CO on Ag) ---
+faradaic_efficiency:
+  value: 0.90
+  std: 0.05
+  tier: LIT_EXTRACTED
+  source: "Ag CO2->CO ~90-92% FE at ~100-250 mA/cm2 (Frontiers Catal. 2025; CeO2/AgNWs 92.1% @ 251 mA/cm2, Appl. Catal. B 2024)"
+cell_voltage:
+  value: 3.2
+  std: 0.30
+  tier: LIT_EXTRACTED
+  source: "Zero-gap CO2->CO cell voltage ~3.0-3.5 V (<4 V reported, Chem. Eng. J. 2025)"
+
+# --- economics ---
+capex_total:
+  value: 5.0e7
+  std: 2.0e7
+  tier: ESTIMATED
+  source: "Order-of-magnitude electrolyzer plant CAPEX for ~20 kt/yr CO; dominant uncertainty — replace with a costed design"
+annual_production_kg:
+  value: 2.0e7
+  std: 4.0e6
+  tier: ESTIMATED
+  source: "Assumed plant scale 20 kt/yr CO"
+opex_fix_per_yr:
+  value: 3.0e6
+  std: 1.0e6
+  tier: ESTIMATED
+  source: "Assumed fixed O&M (~6% of CAPEX/yr)"
+c_co2:
+  value: 0.05
+  std: 0.02
+  tier: LIT_EXTRACTED
+  source: "Point-source capture ~39-51 $/t (PNNL 2021-23); CCS range 15-130 $/t (S&P/IPCC)"
+c_elec:
+  value: 0.04
+  std: 0.015
+  tier: LIT_EXTRACTED
+  source: "Cheap renewable PPA / CO2RR competitiveness threshold <0.04 $/kWh (Curr. Opin. review 2022)"
+lcop_conventional:
+  value: 0.60
+  std: 0.10
+  tier: LIT_EXTRACTED
+  source: "Merchant CO market price ~0.6 $/kg (Jouny, Luc & Jiao, general CO2 electrolysis TEA, 2018)"
+
+# --- environment ---
+grid_intensity:
+  value: 0.05
+  std: 0.02
+  tier: LIT_EXTRACTED
+  source: "Renewable (solar PV) lifecycle ~0.04-0.05 kgCO2e/kWh (IPCC). NSW grid = 0.66 (NGA Factors 2025) if grid-powered"
+e_capture:
+  value: 0.10
+  std: 0.04
+  tier: ESTIMATED
+  source: "Capture parasitic emissions per kg product (renewable-powered capture); revise with capture energy model"
+e_process:
+  value: 0.05
+  std: 0.02
+  tier: ESTIMATED
+  source: "Other process emissions per kg product"
+release_fraction:
+  value: 0.50
+  std: 0.20
+  tier: ESTIMATED
+  source: "CO is an intermediate: ~half to durable products, ~half to fuels (re-released). Transparent assumption — revise per downstream use"

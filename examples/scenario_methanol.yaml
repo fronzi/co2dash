@@ -1,0 +1,29 @@
+# Example scenario for co2dash.config.load_scenario
+# ALL VALUES ARE ILLUSTRATIVE PLACEHOLDERS. Replace with sourced, tier-tagged data.
+# Each field may be a plain scalar or {value, std, tier, source}.
+# Tiers: COMPUTED | LAB_VALIDATED | LIT_EXTRACTED | ESTIMATED  (tier sets the noise floor)
+
+reaction: methanol            # selects stoichiometry (n_electrons, molar_mass_prod, m_co2)
+
+# --- performance levers (research can move these) ---
+faradaic_efficiency: {value: 0.60, std: 0.08, tier: LAB_VALIDATED, source: "placeholder"}
+cell_voltage:        {value: 3.0,  std: 0.25, tier: LAB_VALIDATED, source: "placeholder"}
+m_h2: 0.0
+
+# --- plant economics ---
+capex_total:         {value: 5.0e7, std: 2.0e7, tier: ESTIMATED, source: "placeholder NREL-class"}
+annual_production_kg: 2.0e7
+opex_fix_per_yr:     {value: 3.0e6, std: 0.6e6, tier: ESTIMATED, source: "placeholder"}
+disc_rate: 0.08
+lifetime_yr: 20
+c_co2:  {value: 0.05, std: 0.01, tier: LIT_EXTRACTED, source: "placeholder capture cost"}
+c_elec: {value: 0.06, std: 0.02, tier: LIT_EXTRACTED, source: "placeholder grid price"}
+c_h2: 0.0
+lcop_conventional: {value: 0.40, std: 0.05, tier: LIT_EXTRACTED, source: "placeholder fossil MeOH"}
+
+# --- environment ---
+grid_intensity: {value: 0.02, std: 0.008, tier: LIT_EXTRACTED, source: "placeholder low-C grid"}
+e_capture: {value: 0.10, std: 0.03, tier: ESTIMATED, source: "placeholder"}
+e_process: {value: 0.05, std: 0.02, tier: ESTIMATED, source: "placeholder"}
+release_fraction: 0.10        # durable-utilisation framing
+rectifier_eff: 0.95

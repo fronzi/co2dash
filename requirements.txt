@@ -1,0 +1,10 @@
+# Streamlit Community Cloud installs from this file at the repo root.
+# The trailing '.' installs the local co2dash package (src-layout); the explicit
+# pins guarantee the runtime deps resolve even if the build backend is slow.
+numpy>=1.24
+scipy>=1.10
+SALib>=1.4
+pyyaml>=6.0
+streamlit>=1.30
+plotly>=5.18
+.

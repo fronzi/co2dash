@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "co2dash"
+version = "0.1.0"
+description = "Zero-new-DFT techno-economic/environmental platform for CO2 utilisation"
+requires-python = ">=3.9"
+dependencies = ["numpy>=1.24", "scipy>=1.10", "SALib>=1.4", "pyyaml>=6.0"]
+
+[project.optional-dependencies]
+ui = ["streamlit>=1.30", "plotly>=5.18"]
+connectors = ["requests>=2.28", "mp-api>=0.39"]
+dev = ["pytest>=7.0"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

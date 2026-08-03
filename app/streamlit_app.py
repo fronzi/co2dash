@@ -18,7 +18,7 @@ import streamlit as st
 from co2dash import (RXN_METHANOL, RXN_FORMATE, RXN_CO, Scenario, propagate_mc,
                      sobol_indices, feasibility_envelope, BayesianLinearSurrogate,
                      rank_candidates, Candidate, load_scenario, coverage_report,
-                     miscalibration_area, TemperatureScaler)
+                     miscalibration_area, TemperatureScaler, calibrate_and_evaluate)
 from co2dash.techno_economic import (capital_recovery_factor,
                                      specific_electricity_kwh_per_kg)
 from co2dash.energy import list_regions, get_energy, apply_to_scenario
@@ -202,6 +202,35 @@ with st.expander("🧭 Recommended next steps (plain-language synthesis)", expan
             st.markdown(f"- {s}")
 
 # --------------------------------------------------------------------- tabs
+@st.cache_data(show_spinner=False)
+def _load_hea(file_bytes, sheet):
+    """Real DFT descriptor loader: HEA .xlsx (CO/CHO/COOH sheets) -> (X, y, labels).
+    X = elemental site features, y = Eads (eV) of the chosen intermediate."""
+    import pandas as pd, io
+    df = pd.read_excel(io.BytesIO(file_bytes), sheet_name=sheet)
+    target = "Eads (eV)" if "Eads (eV)" in df.columns else df.columns[-1]
+    feats = [c for c in df.columns if c not in ("Labels", target)]
+    X = df[feats].apply(pd.to_numeric, errors="coerce").to_numpy(float)
+    y = pd.to_numeric(df[target], errors="coerce").to_numpy(float)
+    # the 'Labels' column here duplicates Eads (not a material name), so identify
+    # each alloy configuration by its dataset row index instead.
+    labels = [f"config #{i}" for i in range(len(df))]
+    m = np.isfinite(X).all(axis=1) & np.isfinite(y)
+    return X[m], y[m], [l for l, keep in zip(labels, m) if keep]
+
+
+st.sidebar.markdown("---")
+_dft_up = st.sidebar.file_uploader(
+    "Real DFT descriptors (HEA .xlsx: CO/CHO/COOH sheets)", type=["xlsx"], key="dft")
+_dft_int = st.sidebar.selectbox("Descriptor target (intermediate)",
+                                ["CO", "CHO", "COOH"], key="dft_int")
+_dft = None
+if _dft_up is not None:
+    try:
+        _dft = _load_hea(_dft_up.getvalue(), _dft_int)
+    except Exception as _e:
+        st.sidebar.error(f"Could not read descriptors: {_e}")
+
 t1, t2, t3, t4, t5, t6 = st.tabs(["Economics & climate", "Feasibility envelope",
                                   "Sensitivity", "Active learning", "Calibration",
                                   "Your data"])
@@ -269,46 +298,65 @@ with t3:
                 unsafe_allow_html=True)
 
 with t4:
-    st.markdown("**Which catalyst to compute next?** Ranked by expected value of "
-                "information toward feasibility.")
-    st.markdown('<span class="cap">Demo uses synthetic descriptors; replace with real '
-                'Catalysis-Hub / OC20 data and your calibrated surrogate.</span>',
-                unsafe_allow_html=True)
-    rng = np.random.default_rng(0)
-    keys = ["dE_CO", "dE_COOH"]
-    Xtr = rng.uniform([-1.5, -1.0], [0.5, 1.5], size=(50, 2))
-    ytr = 0.9 * np.exp(-((Xtr[:, 0] + 0.6) ** 2 + (Xtr[:, 1] - 0.2) ** 2)) + rng.normal(0, 0.05, 50)
-    surr = BayesianLinearSurrogate(degree=2).fit(Xtr, ytr)
-    n_cand = st.slider("Number of candidate materials", 5, 30, 12)
-    cands = [Candidate(material_id=f"cand_{i}",
-                       descriptors={"dE_CO": float(x[0]), "dE_COOH": float(x[1])})
-             for i, x in enumerate(rng.uniform([-1.5, -1.0], [0.5, 1.5], size=(n_cand, 2)))]
-    ranked = rank_candidates(cands, surr, keys, base, carbon_price, seed=2)
-    st.dataframe(ranked, use_container_width=True, hide_index=True)
+    st.markdown("**Which alloy to compute next?** Ranked by how much a new DFT "
+                "calculation would cut the surrogate's uncertainty about the "
+                "activity landscape.")
+    if _dft is None:
+        st.info("Upload a real DFT descriptor file in the sidebar (HEA .xlsx with "
+                "CO/CHO/COOH sheets) to rank real candidates. This tab stays inactive "
+                "until real descriptors are provided — no synthetic candidates.")
+    else:
+        import pandas as pd
+        X, yv, labels = _dft
+        Xk = X[:, X.std(0) > 1e-9]
+        rng = np.random.default_rng(0)
+        idx = rng.permutation(len(yv))
+        ntr = max(20, int(0.6 * len(yv)))
+        tr, pool = idx[:ntr], idx[ntr:]
+        surr = BayesianLinearSurrogate().fit(Xk[tr], yv[tr])
+        mean, sd = surr.predict(Xk[pool])
+        order = np.argsort(-sd)
+        tbl = pd.DataFrame({
+            "alloy": [labels[pool[i]] for i in order],
+            f"pred ΔE ·*{_dft_int} (eV)": np.round(mean[order], 3),
+            "uncertainty (eV)": np.round(sd[order], 3),
+        }).head(15)
+        st.dataframe(tbl, use_container_width=True, hide_index=True)
+        st.markdown(f'<span class="cap">Real ACS Catalysis FeCoNiCuMo HEA DFT · '
+                    f'target = *{_dft_int} adsorption energy · trained on {len(tr)} '
+                    f'alloys · {len(pool)} candidates ranked by predictive uncertainty '
+                    f'(most informative next calculation on top).</span>',
+                    unsafe_allow_html=True)
 
 with t5:
-    st.markdown("**Is the surrogate's uncertainty trustworthy?** Reliability of a demo model.")
-    rng = np.random.default_rng(1)
-    mean = rng.normal(0, 2, 4000); y = mean + rng.normal(0, 1.0, 4000)
-    over = st.slider("Reported std (true spread = 1.0)", 0.2, 2.0, 0.4, 0.1)
-    std = np.full_like(mean, over)
-    levels = (0.5, 0.8, 0.9, 0.95)
-    before = coverage_report(mean, std, y, levels)
-    ts = TemperatureScaler().fit(mean, std, y); m2, s2 = ts.transform(mean, std)
-    after = coverage_report(m2, s2, y, levels)
-    c1, c2 = st.columns([2, 1])
-    with c1:
-        st.plotly_chart(ui.reliability_diagram(list(levels),
-                        [before[l] for l in levels], [after[l] for l in levels]),
-                        use_container_width=True)
-    with c2:
-        st.metric("Temperature scale s", f"{ts.s:.2f}",
-                  help=">1 inflates an over-confident std; <1 shrinks under-confident")
-        st.metric("Miscalibration", f"{miscalibration_area(mean, std, y):.3f}",
-                  delta=f"{miscalibration_area(m2, s2, y) - miscalibration_area(mean, std, y):+.3f}",
-                  delta_color="inverse")
-        st.markdown('<span class="cap">Points on the dotted line = perfectly calibrated. '
-                    'Below it = over-confident.</span>', unsafe_allow_html=True)
+    st.markdown("**Is the surrogate's uncertainty trustworthy?** Reliability on real DFT data.")
+    if _dft is None:
+        st.info("Upload a real DFT descriptor file in the sidebar to see the real "
+                "reliability diagram (train/calibration/test split on the uploaded "
+                "data). No synthetic demo is shown.")
+    else:
+        X, yv, labels = _dft
+        Xk = X[:, X.std(0) > 1e-9]
+        rep = calibrate_and_evaluate(
+            Xk, yv, surrogate_factory=lambda Xt, yt: BayesianLinearSurrogate().fit(Xt, yt),
+            alpha=0.1, seed=0)
+        lv = list(rep.levels)
+        before = [rep.coverage_before[l] for l in lv]
+        after = [rep.coverage_after[l] for l in lv]
+        c1, c2 = st.columns([2, 1])
+        with c1:
+            st.plotly_chart(ui.reliability_diagram(lv, before, after),
+                            use_container_width=True)
+        with c2:
+            st.metric("Temperature scale s", f"{rep.temperature_s:.2f}",
+                      help=">1 inflates an over-confident std; <1 shrinks under-confident")
+            st.metric("Miscalibration", f"{rep.miscal_before:.3f}",
+                      delta=f"{rep.miscal_after - rep.miscal_before:+.3f}",
+                      delta_color="inverse")
+            st.markdown(f'<span class="cap">Real HEA DFT · *{_dft_int} · '
+                        f'n={rep.n_train + rep.n_cal + rep.n_test}. On the dotted line '
+                        f'= calibrated; below = over-confident.</span>',
+                        unsafe_allow_html=True)
 
 # --------------------------------------------------------------------- Your data
 with t6:

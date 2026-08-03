@@ -12,3 +12,6 @@ examples/_cheat_cache/
 *.zip
 .DS_Store
 .ipynb_checkpoints/
+
+*.swp
+*.bak

@@ -1,0 +1,7 @@
+material,product,faradaic_efficiency,cell_voltage,current_density,source
+Ag-zerogap-Endrodi2019,CO,85,3.0,250,Endrodi 2019 zero-gap (Osorio-Tejada 2024 T2)
+Ag-GDE-Jeanty2018,CO,53,6.0,150,Jeanty 2018 GDE (Osorio-Tejada 2024 T2)
+Ag-zerogap-Endrodi2021,CO,90,3.2,420,Endrodi 2021 zero-gap (Osorio-Tejada 2024 T2)
+Ag-MEA-Lee2021,CO,93,2.2,223,Lee 2021 MEA (Osorio-Tejada 2024 T2)
+Ag-flowcell-Bhargava2020,CO,98,3.0,866,Bhargava 2020 flow cell (Osorio-Tejada 2024 T2)
+Ag-flowcell-Kim2015,CO,83,3.0,51,Kim 2015 flow cell (Osorio-Tejada 2024 T2)

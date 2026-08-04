@@ -1,0 +1,298 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,amssymb}
+\usepackage{mhchem}
+\usepackage{geometry}
+\geometry{margin=2.5cm}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\hypersetup{colorlinks=true,linkcolor=black,urlcolor=blue}
+
+\newcommand{\co}{\ensuremath{\mathrm{CO_2}}}
+\newcommand{\FE}{\mathrm{FE}}
+\newcommand{\kgi}{\mathrm{kg^{-1}}}
+
+\title{\textbf{co2dash --- Methods, Equations, and References}}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+\vspace{-2.5em}
+
+\noindent Every equation the engine actually evaluates, with the source it is
+taken from and the reason for the choice. Equations are transcribed from the
+source code (\texttt{techno\_economic.py}, \texttt{proxy.py},
+\texttt{calibration.py}, \texttt{uncertainty.py}) so this document matches what
+the app computes, not an idealised version.
+
+\begin{quote}
+\small\textbf{Citation note.} The references below are the canonical/primary
+sources for each method. Exact bibliographic details (year, volume, DOI) should be
+re-verified against the original papers before use in a manuscript; they are given
+here to document provenance and rationale, not as camera-ready citations.
+\end{quote}
+
+\noindent\textbf{Conventions.} All quantities are per kg of product unless
+stated. Constants: Faraday $F = 96\,485~\mathrm{C\,mol^{-1}}$;
+$1~\mathrm{kWh} = 3.6\times10^{6}~\mathrm{J}$.
+
+\hrulefill
+
+\section{Specific electrical energy}
+\emph{Code: }\texttt{specific\_electricity\_kwh\_per\_kg}.
+\begin{equation}
+E_\mathrm{el} = \frac{n\,F\,V_\mathrm{cell}}{M \cdot \FE \cdot \eta_\mathrm{rect}}
+\quad[\mathrm{J\,\kgi}] \;\longrightarrow\; \mathrm{kWh\,\kgi}
+\end{equation}
+with $n$ = electrons per molecule, $V_\mathrm{cell}$ = full-cell voltage, $M$ =
+molar mass of product, $\FE$ = faradaic efficiency, $\eta_\mathrm{rect}$ =
+rectifier (AC$\to$DC) efficiency (default $0.95$).
+
+\textbf{Source.} Faraday's law of electrolysis (standard electrochemistry, e.g.
+Bard \& Faulkner, \emph{Electrochemical Methods}). The same expression is the
+energy core of Jouny, Luc \& Jiao, \emph{Ind.\ Eng.\ Chem.\ Res.} 2018 --- the
+study we validate against.
+
+\textbf{Rationale.} This is the single term with the sharpest sensitivity to the
+two levers research can move ($\FE$ enters as $1/\FE$; $V_\mathrm{cell}$ enters
+linearly). Exposing it explicitly, rather than burying it in an aggregate cost, is
+a core design goal. $\eta_\mathrm{rect}$ captures balance-of-plant AC$\to$DC
+losses that separate cell energy from plant energy.
+
+\section{Capital recovery factor (levelisation)}
+\emph{Code: }\texttt{capital\_recovery\_factor}.
+\begin{equation}
+\mathrm{CRF} = \frac{i(1+i)^{L}}{(1+i)^{L}-1}, \qquad
+\mathrm{CRF} = \tfrac{1}{L}\ \text{if } i=0,
+\end{equation}
+with $i$ = discount rate, $L$ = plant lifetime (years).
+
+\textbf{Source.} Standard engineering economics (annualised capital charge). The
+same device --- an annualised capital charge rate (ACCR $\equiv$ CRF) --- is used
+by Osorio-Tejada et al., \emph{Energy Environ.\ Sci.} 2024, our second validation
+anchor.
+
+\textbf{Rationale.} We deliberately levelise capital with a CRF rather than run a
+full discounted cash-flow with tax and depreciation. This makes the output a
+\emph{cost of production} (comparable across routes at a glance) rather than an
+after-tax NPV. It is a scope choice, stated openly: absolute LCOP is \emph{not}
+expected to equal a levered NPV such as Jouny 2018's, but \emph{is} like-for-like
+with Osorio-Tejada 2024 (which uses ACCR).
+
+\section{Levelised cost of product (LCOP)}
+\emph{Code: }\texttt{lcop}.
+\begin{equation}
+\mathrm{LCOP} =
+\underbrace{\frac{\mathrm{CAPEX}\cdot\mathrm{CRF} + \mathrm{OPEX}_\mathrm{fix}}
+{\dot m_\mathrm{annual}}}_{\text{fixed}}
++ \underbrace{c_{\co}\,m_{\co} + c_\mathrm{el}\,E_\mathrm{el}
++ c_{\mathrm{H_2}}\,m_{\mathrm{H_2}}}_{\text{variable}}
+\quad[\$\,\kgi]
+\end{equation}
+
+\textbf{Source.} Standard levelised-cost formulation; structure follows the TEA
+breakdowns in Jouny 2018 and Osorio-Tejada 2024 (feedstock + electricity +
+annualised capital + fixed O\&M).
+
+\textbf{Rationale.} The variable terms are physical and largely model-independent
+(feedstock \co, electricity via $E_\mathrm{el}$, optional \ce{H2} co-feed), so
+they reproduce published numbers to within a few percent. The fixed term carries
+the model's largest uncertainty because CAPEX is an estimate (\S8).
+
+\section{Net \texorpdfstring{\co}{CO2} abatement (life-cycle / climate)}
+\emph{Code: }\texttt{net\_abatement\_kg\_per\_kg}.
+\begin{equation}
+\text{net} = (1-\varphi)\,m_{\co}
+\;-\;\bigl(I_\mathrm{grid}\,E_\mathrm{el} + e_\mathrm{capture} + e_\mathrm{process}\bigr)
+\end{equation}
+with $\varphi$ = end-of-life release fraction ($0$ = durable product, $1$ = fuel
+re-oxidised), $I_\mathrm{grid}$ = grid carbon intensity
+($\mathrm{kg\,\co\,kWh^{-1}}$), $e_\mathrm{capture}, e_\mathrm{process}$ = \co\
+penalties of capture and other process steps.
+
+\textbf{Source.} Life-cycle CCU accounting; the utilisation-vs-sequestration
+distinction follows CCU LCA methodology (e.g.\ von der Assen, Bardow and
+co-workers) and IPCC-style grid-emission accounting.
+
+\textbf{Rationale.} The $(1-\varphi)$ term is the crux of \emph{utilisation} vs
+\emph{storage}: a fuel later burned ($\varphi\to 1$) keeps almost none of the \co\
+credit. Making $\varphi$ an explicit lever prevents counting utilised \co\ as
+permanently abated. Grid intensity multiplies the (large) electrical energy, which
+is why the climate verdict is dominated by the electricity source.
+
+\section{Break-even grid intensity}
+\emph{Code: }\texttt{breakeven\_grid\_intensity} (net $=0$ solved for
+$I_\mathrm{grid}$).
+\begin{equation}
+I^{*} = \frac{(1-\varphi)\,m_{\co} - e_\mathrm{capture} - e_\mathrm{process}}
+{E_\mathrm{el}}
+\end{equation}
+Above $I^{*}$, the conversion \emph{increases} emissions.
+
+\textbf{Source.} Algebraic rearrangement of Section~4 (no external source).
+
+\textbf{Rationale.} Given in closed form and surfaced as a first-class KPI because
+``how clean must my electricity be for this to help at all?'' is one of the most
+decision-relevant questions, and it has an exact answer.
+
+\section{Marginal abatement cost (MAC)}
+\emph{Code: }\texttt{marginal\_abatement\_cost}.
+\begin{equation}
+\mathrm{MAC} = \frac{\mathrm{LCOP}_\mathrm{CCU} - \mathrm{LCOP}_\mathrm{conv}}
+{\text{net}}\quad[\$\,\kgi\,\co], \qquad
+\mathrm{MAC} = +\infty\ \text{if net} \le 0,
+\end{equation}
+($\times 1000$ for $\$\,\mathrm{tonne^{-1}}$).
+
+\textbf{Source.} Standard definition of marginal abatement cost from
+climate/energy economics (cost premium over the incumbent per unit \co\ avoided).
+
+\textbf{Rationale.} MAC is the single figure investors and regulators read, and it
+couples cost and climate into one comparable number. Returning $+\infty$ when
+net $\le 0$ is deliberate: a route that is not climate-positive has no defined
+abatement cost, and hiding that behind a finite number would mislead.
+
+\section{Activity proxy --- Computational Hydrogen Electrode (CHE)}
+\emph{Code: }\texttt{proxy.py}. Turns DFT intermediate energies into an activity
+target when experimental $\FE$ is unavailable.
+
+Formation free energy of each adsorbed intermediate (\co\ reference $=0$):
+\begin{equation}
+G_f({}^{*}X) = \Delta E_f({}^{*}X) + \Delta(\mathrm{ZPE}-T\Delta S)_X .
+\end{equation}
+Per proton-coupled electron-transfer (PCET) step, and the limiting potential:
+\begin{equation}
+\Delta G_i(U) = \Delta G_i(0) - eU, \qquad
+U_L = -\max_i \Delta G_i(0)\quad (e = 1\ \text{in eV/V}).
+\end{equation}
+Overpotential and the transparent activity$\to$voltage map fed to the TEA:
+\begin{equation}
+\eta = U_\mathrm{eq} - U_L, \qquad
+V_\mathrm{cell} \approx V_\mathrm{baseline} + \eta .
+\end{equation}
+Equilibrium potentials used (V vs RHE): CO $-0.10$, HCOOH $-0.12$,
+\ce{CH3OH} $+0.02$.
+
+\textbf{Source.} N{\o}rskov et al., \emph{J.\ Phys.\ Chem.\ B} 2004 (computational
+hydrogen electrode); \co RR pathway/limiting-potential analysis following
+Peterson \& N{\o}rskov and the \co-reduction scaling-relation literature.
+
+\textbf{Rationale.} CHE is the standard, transparent way to rank catalyst
+\emph{activity} from adsorption energies without kinetics. We map activity to
+\textbf{cell voltage} (which the TEA already consumes), not to $\FE$, because
+activity $\neq$ selectivity --- predicting $\FE$ from thermodynamic descriptors is
+not defensible, so we do not claim it. \emph{Honesty defaults:}
+$\Delta(\mathrm{ZPE}-T\Delta S)$ corrections are \textbf{off} by default
+(electronic energies only); equilibrium potentials are textbook values to verify
+for pH/reference convention; $V_\mathrm{baseline}$ is an explicit adjustable
+parameter, not a first-principles cell model.
+
+\section{Uncertainty propagation (Monte-Carlo)}
+\emph{Code: }\texttt{uncertainty.py::propagate\_mc}. Each uncertain input is
+sampled from its distribution and pushed through the deterministic engine
+(Sections~1--6) $N$ times (default $\approx 4\times 10^{4}$):
+\begin{itemize}[nosep]
+  \item Normal: $x\sim\mathcal N(\mu,\sigma)$, truncated to physical bounds.
+  \item Lognormal: $x = a\,e^{\mathcal N(0,\ln b)}$ (median $a$, geometric std
+  $b$) for strictly-positive, right-skewed quantities.
+\end{itemize}
+Outputs are read empirically from the sample:
+\begin{equation}
+P(\text{net}>0) = \frac1N\sum_k \mathbf 1[\text{net}_k>0], \qquad
+P(\mathrm{MAC}<c) = \frac1N\sum_k \mathbf 1[\mathrm{MAC}_k<c],
+\end{equation}
+with P05/P95 percentiles reported for the MAC distribution. The per-field
+\emph{data tier} sets the noise floor $\sigma$: \textsc{computed} $\approx 5\%$,
+\textsc{lab\_validated} $\approx 3\%$, \textsc{lit\_extracted} $\approx 20\%$,
+\textsc{estimated} $\approx 40\%$ (typically CAPEX).
+
+\textbf{Source.} Monte-Carlo propagation of distributions (GUM Supplement~1, JCGM
+101:2008).
+
+\textbf{Rationale.} The engine is deterministic; all uncertainty is in the inputs,
+so propagating input distributions is the correct, assumption-light way to obtain
+honest output distributions. Probabilities are empirical frequencies, not
+parametric approximations. Tiers tie the noise to data provenance, so the width of
+the answer reflects how well the inputs are known.
+
+\section{Uncertainty calibration}
+\emph{Code: }\texttt{calibration.py}. Applied to a learned surrogate's predictive
+std \emph{before} it enters Section~8.
+
+Empirical coverage of central Gaussian intervals (diagnosis):
+\begin{equation}
+\widehat{\mathrm{cov}}(\ell) = \frac1m\sum_i
+\mathbf 1\!\left[\,|y_i-\mu_i| \le z_\ell\,\sigma_i\,\right], \qquad
+z_\ell = \Phi^{-1}\!\left(\tfrac12 + \tfrac{\ell}{2}\right).
+\end{equation}
+Temperature scaling (global std correction), fitted by Gaussian MLE:
+\begin{equation}
+s^2 = \frac1m\sum_i \frac{(y_i-\mu_i)^2}{\sigma_i^2}, \qquad
+\sigma_i' = s\,\sigma_i .
+\end{equation}
+Normalised split-conformal prediction (distribution-free, finite-sample):
+\begin{equation}
+r_i = \frac{|y_i-\mu_i|}{\sigma_i}, \qquad
+q = \big\lceil (m+1)(1-\alpha)\big\rceil / m\ \text{empirical quantile of }\{r_i\}, \qquad
+\text{interval} = \mu \pm q\,\sigma .
+\end{equation}
+
+\textbf{Source.} Calibrated regression: Kuleshov, Fenner \& Ermon, \emph{ICML}
+2018; Levi et al.\ 2022; the scalar temperature idea generalises Guo et al.,
+\emph{ICML} 2017. Split/normalised conformal: Vovk, Gammerman \& Shafer 2005; Lei
+et al., \emph{JASA} 2018; Papadopoulos et al.\ 2008.
+
+\textbf{Rationale.} An over-confident surrogate yields feasibility probabilities
+that are confident \emph{and wrong} --- the worst failure for a decision tool.
+Temperature scaling is a one-parameter, robust fix for systematic
+over/under-confidence; split-conformal adds a distribution-free finite-sample
+coverage guarantee. The conformal half-width is mapped back to a
+Gaussian-equivalent std so the existing Monte-Carlo sampler consumes calibrated
+uncertainty unchanged (a documented width-matching approximation).
+
+\section{Global sensitivity (Sobol)}
+\emph{Code: }\texttt{uncertainty.py::sobol\_indices} (via SALib). Variance-based
+total-effect indices $S_T$ are computed with Saltelli sampling over the input
+ranges, ranking each input by its share of MAC variance.
+
+\textbf{Source.} Sobol, \emph{Math.\ Comput.\ Simul.} 2001; Saltelli et al.\ 2010
+(estimators SALib implements).
+
+\textbf{Rationale.} Variance-based (rather than local/one-at-a-time) sensitivity
+suits a nonlinear model with inputs uncertain over wide ranges; total-effect
+indices capture interactions. The tornado of $S_T$ tells the user \emph{what to
+work on} (catalyst vs energy vs plant).
+
+\section*{Consolidated references}
+\begin{enumerate}[nosep,leftmargin=1.4em]
+\item Bard, A.\,J.; Faulkner, L.\,R. \emph{Electrochemical Methods.} (Faraday's law.)
+\item Jouny, M.; Luc, W.; Jiao, F. \emph{A General Techno-Economic Analysis of
+\co\ Electrolysis Systems.} Ind.\ Eng.\ Chem.\ Res., 2018. (TEA anchor.)
+\item Osorio-Tejada, J. et al. \emph{Techno-economic analysis of \co\ conversion.}
+Energy Environ.\ Sci., 2024. (Like-for-like levelised-cost anchor; ACCR $=$ CRF.)
+\item von der Assen, N.; Bardow, A. et al. --- \co-utilisation LCA methodology.
+\item JCGM 101:2008 --- \emph{Supplement 1 to the GUM} (Monte-Carlo propagation).
+\item N{\o}rskov, J.\,K. et al.\ --- computational hydrogen electrode, J.\ Phys.\
+Chem.\ B, 2004.
+\item Peterson, A.\,A.; N{\o}rskov, J.\,K. --- \co-reduction limiting potential /
+scaling relations.
+\item Kuleshov, V.; Fenner, N.; Ermon, S. \emph{Accurate Uncertainties for Deep
+Learning Using Calibrated Regression.} ICML, 2018.
+\item Levi, D. et al. \emph{Evaluating and Calibrating Uncertainty Prediction in
+Regression Tasks.} 2022.
+\item Guo, C. et al. \emph{On Calibration of Modern Neural Networks.} ICML, 2017.
+\item Vovk, V.; Gammerman, A.; Shafer, G. 2005; Lei, J. et al. \emph{JASA} 2018;
+Papadopoulos, H. et al.\ 2008 (conformal prediction).
+\item Sobol, I.\,M. \emph{Math.\ Comput.\ Simul.} 2001; Saltelli, A. et al.\ 2010
+(variance-based sensitivity; SALib).
+\end{enumerate}
+
+\noindent\small Grid carbon intensities used in scenarios: Ember / IEA 2024;
+Australian National Greenhouse Accounts Factors 2025. Dataset citations for the
+ML/calibration work are in \texttt{docs/VALIDATION.md}.
+
+\end{document}

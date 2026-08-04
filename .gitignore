@@ -15,3 +15,5 @@ examples/_cheat_cache/
 
 *.swp
 *.bak
+
+examples/THIRDPARTY_*

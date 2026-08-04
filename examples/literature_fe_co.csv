@@ -1,8 +1,0 @@
-material,product,cell_voltage,current_density,FE,source
-Ag-zerogap-Endrodi2019,co,3.0,250,85,Endrodi 2019 zero-gap (via Osorio-Tejada 2024 Table 2)
-Ag-GDE-Jeanty2018,co,6.0,150,53,Jeanty 2018 three-compartment GDE (via Osorio-Tejada 2024 Table 2)
-Ag-zerogap-Endrodi2021,co,3.2,420,90,Endrodi 2021 zero-gap (via Osorio-Tejada 2024 Table 2)
-Ag-MEA-Lee2021,co,2.2,223,93,J. Lee 2021 MEA (via Osorio-Tejada 2024 Table 2)
-Ag-zerogap-Endrodi2020,co,3.4,700,90,Endrodi 2020 zero-gap (via Osorio-Tejada 2024 Table 2)
-Ag-flowcell-Bhargava2020,co,3.0,866,98,Bhargava 2020 flow cell (via Osorio-Tejada 2024 Table 2)
-Ag-flowcell-Kim2015,co,3.0,51,83,Kim 2015 flow cell (via Osorio-Tejada 2024 Table 2)

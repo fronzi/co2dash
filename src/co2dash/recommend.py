@@ -138,12 +138,23 @@ def recommend(base: Scenario, carbon_price_usd_per_kg: float,
                 bounds[f] = (0.0, max(0.1, v * 1.5))
             else:
                 bounds[f] = (v * 0.7, v * 1.3)
+        # NOTE: a missing SALib must NOT be silently reported as 'no dominant
+        # lever' -- that is an unavailable analysis, not a result. Import errors
+        # propagate with an actionable message; only genuine numerical failures
+        # of the analysis itself degrade to None.
         try:
             S = sobol_indices(base, bounds, n=512)
+        except ImportError as exc:                       # dependency, not a finding
+            raise ImportError(
+                "Sobol sensitivity requires SALib (declared in pyproject "
+                "dependencies). Install it with `pip install SALib` -- without "
+                "it the dominant-lever recommendation cannot be computed and "
+                "must not be reported as absent.") from exc
+        try:
             dominant, dom_ST = max(((k, s["ST"]) for k, s in S.items()),
                                    key=lambda kv: kv[1])
-        except Exception:
-            dominant = None
+        except (ValueError, KeyError, TypeError):        # analysis returned nothing usable
+            dominant, dom_ST = None, 0.0
         if dominant is not None:
             tgt_field = dominant
             tgt_val, reachable = _target_value(base, dominant, carbon_price_usd_per_kg)

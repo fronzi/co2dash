@@ -24,6 +24,10 @@ from co2dash.techno_economic import (capital_recovery_factor,
 from co2dash.energy import list_regions, get_energy, apply_to_scenario
 from co2dash.intake import map_columns, ingest_table
 from co2dash.recommend import recommend
+from co2dash.composition import Composition, ELEMENTS, sro_note
+from co2dash.chain import (ReferenceFrame, train_intermediate_models,
+                           run_chain, rank_compositions, DFT)
+from co2dash.hea import load_workbook
 import ui_charts as ui
 
 st.set_page_config(page_title="co2dash · CO₂ utilisation platform",
@@ -118,6 +122,18 @@ if region_code is not None:
     _q = _e["grid_intensity"]
     st.sidebar.caption(f"Grid: **{_e['name']}** — {_q.value:.3f} kgCO₂/kWh  \nSource: {_q.source}")
 
+# --------------------------------------------------- DFT-driven cell voltage
+# Set from the Composition tab (session state, so it survives the rerun). Every
+# performance field records its origin; the verdict strip renders that origin so
+# an assumed input can never be mistaken for a predicted one.
+KPI_ORIGIN = {"faradaic_efficiency": "assumed", "cell_voltage": "assumed"}
+_chain_v = st.session_state.get("chain_v_cell")
+_chain_label = st.session_state.get("chain_label", "")
+if _chain_v is not None:
+    import dataclasses as _dc
+    base = _dc.replace(base, cell_voltage=float(_chain_v))
+    KPI_ORIGIN["cell_voltage"] = "DFT"
+
 # --------------------------------------------------------------------- compute
 r = base.evaluate()
 e_elec = specific_electricity_kwh_per_kg(base.n_electrons, base.cell_voltage,
@@ -166,6 +182,22 @@ st.markdown(f"""
     <div><div class="vstat-label">MAC median</div><div class="vstat-value">{mac_med_t} $/t</div></div>
   </div>
 </div>""", unsafe_allow_html=True)
+
+# provenance strip: which KPIs are model-driven and which are assumed
+_dft_kpis = sorted(k for k, v in KPI_ORIGIN.items() if v == "DFT")
+_assumed = sorted(k for k, v in KPI_ORIGIN.items() if v != "DFT")
+if _dft_kpis:
+    st.markdown(
+        f'<span class="cap">Verdict provenance — <b>DFT-driven:</b> '
+        f'{", ".join(_dft_kpis)} ({_chain_label}). <b>Assumed:</b> '
+        f'{", ".join(_assumed)}. Faradaic efficiency is never predicted: no '
+        f'descriptor→selectivity model exists.</span>', unsafe_allow_html=True)
+else:
+    st.markdown(
+        '<span class="cap">Verdict provenance — <b>no KPI is DFT-driven.</b> '
+        'This readout is a function of your slider/YAML inputs only. Use the '
+        '<b>Composition</b> tab to drive cell voltage from the HEA descriptors.'
+        '</span>', unsafe_allow_html=True)
 
 # --------------------------------------------------------------------- KPI row
 def kpi(label, value, unit, accent, sub=""):
@@ -231,9 +263,9 @@ if _dft_up is not None:
     except Exception as _e:
         st.sidebar.error(f"Could not read descriptors: {_e}")
 
-t1, t2, t3, t4, t5, t6 = st.tabs(["Economics & climate", "Feasibility envelope",
-                                  "Sensitivity", "Active learning", "Calibration",
-                                  "Your data"])
+t1, t2, t3, t4, t5, t6, t7 = st.tabs(["Economics & climate", "Feasibility envelope",
+                                      "Sensitivity", "Active learning", "Calibration",
+                                      "Your data", "Composition"])
 
 with t1:
     c1, c2 = st.columns(2)
@@ -414,3 +446,117 @@ with t6:
                 rec = recommend(res.scenario, carbon_price, n_mc=20_000)
             for s in rec.steps:
                 st.markdown(f"- {s}")
+
+# --------------------------------------------------------------------- Composition
+with t7:
+    st.markdown("**Enter an alloy composition, not 40 descriptor columns**")
+    st.caption("Descriptors are element properties, so they are derived from the "
+               "composition via a lookup table. A composition specifies a "
+               "distribution over site occupations, so the prediction is an "
+               "ensemble, not a point.")
+
+    if _dft is None:
+        st.info("Upload the HEA descriptor workbook in the sidebar first — the "
+                "surrogate is trained on it. Nothing here is synthetic.")
+    else:
+        _wb = st.session_state.get("_hea_sheets")
+        if _wb is None:
+            try:
+                _wb = load_workbook(_dft_up.getvalue())
+                st.session_state["_hea_sheets"] = _wb
+            except Exception as _e:
+                st.error(f"Could not load the workbook sheets: {_e}")
+                _wb = None
+
+        if _wb:
+            st.caption(f"Trained per intermediate on: "
+                       + ", ".join(f"*{k} (n={len(v)})" for k, v in sorted(_wb.items())))
+            cmodels = train_intermediate_models(_wb)
+
+            c1, c2 = st.columns([2, 1])
+            with c1:
+                comp_text = st.text_input(
+                    "Composition", value="FeCoNiCuMo",
+                    help="e.g. FeCoNiCuMo (equimolar) or Fe0.4Co0.2Ni0.2Cu0.1Mo0.1")
+            with c2:
+                site1 = st.selectbox("Adsorption site element",
+                                     ["(sampled)"] + ELEMENTS, key="c_site1")
+            n_cfg = st.slider("Configurations sampled", 100, 2000, 500, 100)
+
+            st.markdown("**Reference frame** — how adsorption energies become "
+                        "CHE formation energies")
+            mode = st.radio(
+                "mode", ["relative", "anchored", "absolute"], horizontal=True,
+                label_visibility="collapsed",
+                help="relative: no absolute U_L claimed, ranking only (needs "
+                     "nothing). anchored: one known U_L fixes the constant. "
+                     "absolute: your own gas-phase total energies.")
+            frame = None
+            try:
+                if mode == "anchored":
+                    a1, a2 = st.columns(2)
+                    e_anchor = a1.number_input("Anchor E_ads(*COOH) [eV]", value=-0.90,
+                                               step=0.01, format="%.3f")
+                    u_anchor = a2.number_input("Anchor known U_L [V vs RHE]", value=-0.45,
+                                               step=0.01, format="%.3f")
+                    src = st.text_input("Anchor source (cite it)", value="")
+                    frame = ReferenceFrame(mode="anchored",
+                                           anchor_energies={"COOH": e_anchor},
+                                           anchor_U_L=u_anchor, anchor_source=src)
+                elif mode == "absolute":
+                    g1, g2, g3 = st.columns(3)
+                    gas = {"CO2": g1.number_input("E(CO₂) [eV]", value=0.0, format="%.4f"),
+                           "H2": g2.number_input("E(H₂) [eV]", value=0.0, format="%.4f"),
+                           "H2O": g3.number_input("E(H₂O) [eV]", value=0.0, format="%.4f")}
+                    st.caption("These must come from YOUR calculations — same code, "
+                               "functional, pseudopotentials and cutoff as the slabs. "
+                               "Another group's totals shift every U_L by an unknown "
+                               "constant.")
+                    frame = ReferenceFrame(mode="absolute", gas_energies=gas)
+            except ValueError as _e:
+                st.error(str(_e))
+                frame = None
+
+            if st.button("Predict", key="c_run"):
+                try:
+                    comp = Composition.from_string(comp_text)
+                except ValueError as _e:
+                    st.error(str(_e))
+                    comp = None
+                if comp is not None:
+                    res = run_chain(comp, cmodels, base, frame,
+                                    n_samples=int(n_cfg),
+                                    fixed_site1=None if site1 == "(sampled)" else site1)
+                    cols = st.columns(len(res.predictions))
+                    for col, (sp, p) in zip(cols, sorted(res.predictions.items())):
+                        col.metric(f"ΔE *{sp}", f"{p.mean:.3f} eV",
+                                   help="ensemble mean over sampled configurations")
+                        col.caption(f"configurational ±{p.configurational_sd:.3f} · "
+                                    f"model ±{p.model_sd:.3f} eV")
+
+                    if res.v_cell is not None:
+                        m1, m2, m3 = st.columns(3)
+                        m1.metric("U_L", f"{res.U_L:.3f} V")
+                        m2.metric("PDS", res.pds)
+                        m3.metric("V_cell (DFT)", f"{res.v_cell:.2f} V",
+                                  help=f"±{res.v_cell_sd:.3f} eV from the surrogate")
+                        st.session_state["chain_v_cell"] = res.v_cell
+                        st.session_state["chain_label"] = f"{comp.label()}, {mode}"
+                        st.success("Cell voltage pushed to the headline verdict. "
+                                   "Rerun happens on the next interaction.")
+                    else:
+                        st.warning("No absolute cell voltage in 'relative' mode — "
+                                   "ranking only. The headline verdict keeps your "
+                                   "assumed V_cell.")
+                        if res.relative_score is not None:
+                            st.metric("Relative activity score",
+                                      f"{res.relative_score:+.3f}",
+                                      help="higher = more active; reference-free")
+
+                    for n in res.provenance.notes:
+                        st.caption(f"· {n}")
+
+            if st.session_state.get("chain_v_cell") is not None:
+                if st.button("Clear DFT-driven voltage (back to slider)", key="c_clear"):
+                    st.session_state.pop("chain_v_cell", None)
+                    st.session_state.pop("chain_label", None)

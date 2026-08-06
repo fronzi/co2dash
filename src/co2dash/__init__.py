@@ -106,3 +106,26 @@ __all__ += ["load_workbook", "load_sheet", "join_intermediates",
             "che_reference_shift", "to_che_formation_energies",
             "convert_rows_to_che", "SPECIES_COMPOSITION", "SheetData",
             "JoinReport", "ELEMENT_BY_DESCRIPTOR"]
+
+# composition -> descriptors (the user-facing material interface)
+from .composition import (Composition, DESCRIPTOR_BY_ELEMENT, ELEMENTS,   # noqa: E402
+                          feature_names, sample_configurations,
+                          configurations_to_descriptors,
+                          descriptors_for_composition,
+                          align_to_training_columns, sro_note)
+__all__ += ["Composition", "DESCRIPTOR_BY_ELEMENT", "ELEMENTS",
+            "feature_names", "sample_configurations",
+            "configurations_to_descriptors", "descriptors_for_composition",
+            "align_to_training_columns", "sro_note"]
+
+# the discovery->decision chain: composition -> E_ads -> V_cell -> Scenario
+from .chain import (ChainProvenance, ChainResult, EnsemblePrediction,     # noqa: E402
+                    IntermediateModel, ReferenceFrame, REFERENCE_MODES,
+                    train_intermediate_models, predict_composition,
+                    apply_reference, run_chain, rank_compositions,
+                    pds_uniform, DFT, ASSUMED)
+__all__ += ["ChainProvenance", "ChainResult", "EnsemblePrediction",
+            "IntermediateModel", "ReferenceFrame", "REFERENCE_MODES",
+            "train_intermediate_models", "predict_composition",
+            "apply_reference", "run_chain", "rank_compositions",
+            "pds_uniform", "DFT", "ASSUMED"]

@@ -2,8 +2,9 @@
 import dataclasses
 import math
 from co2dash import load_scenario, recommend
+from conftest import SCENARIO_CO, example
 
-YAML = "examples/scenario_co_real.yaml"
+YAML = example(SCENARIO_CO)
 
 
 def test_recommend_renewable_is_actionable():

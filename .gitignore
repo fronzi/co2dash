@@ -19,3 +19,6 @@ examples/_cheat_cache/
 examples/THIRDPARTY_*
 
 docs/*.pdf
+
+.agents/
+.claude/

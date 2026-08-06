@@ -57,12 +57,14 @@ def test_join_labeled_raises_on_no_overlap():
 
 def test_literature_seed_dataset_wellformed():
     """Guard the shipped real CO2->CO literature seed (Osorio-Tejada 2024 Table 2)."""
-    import os
     from co2dash.intake import read_csv
-    path = os.path.join(os.path.dirname(__file__), "..", "examples", "literature_fe_co.csv")
+    from conftest import LITERATURE_CO_CSV, example
+    path = example(LITERATURE_CO_CSV)
     with open(path) as fh:
         rows = read_csv(fh.read())
     assert len(rows) == 7                                  # 7 real cited studies
     fes = [float(r["faradaic_efficiency"]) for r in rows]
     assert all(50 <= f <= 100 for f in fes)                # stored as percent, plausible
-    assert all(r["product"] == "co" for r in rows)
+    # case-insensitive: row_to_scenario resolves the product via REACTION_ALIASES,
+    # which lowercases, so 'CO' and 'co' are equivalent inputs
+    assert all(str(r["product"]).strip().lower() == "co" for r in rows)

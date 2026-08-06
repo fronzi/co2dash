@@ -2,8 +2,9 @@
 import os
 import numpy as np
 from co2dash import load_scenario, DataTier, RXN_METHANOL, propagate_mc
+from conftest import SCENARIO_METHANOL, example
 
-YAML = os.path.join(os.path.dirname(__file__), "..", "examples", "scenario_methanol.yaml")
+YAML = example(SCENARIO_METHANOL)
 
 
 def test_loader_builds_scenario_with_reaction_stoichiometry():

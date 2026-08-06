@@ -4,8 +4,9 @@ import pytest
 from co2dash import (load_scenario, COUNTRY_PROFILES, list_regions,
                      get_energy, apply_to_scenario)
 from co2dash.schema import DataTier
+from conftest import SCENARIO_CO, example
 
-YAML = "examples/scenario_co_real.yaml"
+YAML = example(SCENARIO_CO)
 
 
 def test_profiles_present_and_sourced():

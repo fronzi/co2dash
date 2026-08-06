@@ -71,7 +71,8 @@ def test_anchor_osorio_physics_within_tolerance():
 def test_anchor_osorio_lcop_in_reported_range():
     from co2dash import load_scenario
     from co2dash.validation import co2dash_lcop_in_reported_range
-    base, _ = load_scenario("examples/scenario_co_real.yaml")
+    from conftest import SCENARIO_CO, example
+    base, _ = load_scenario(example(SCENARIO_CO))
     chk = co2dash_lcop_in_reported_range(base)
     assert chk["in_range"]           # co2dash CO LCOP within paper's $570-1392/t band
 

@@ -13,7 +13,7 @@ from .schema import (Quantity, DataTier, Reaction, Candidate,
                      REACTIONS, RXN_METHANOL, RXN_FORMATE, RXN_CO)
 from .techno_economic import (Scenario, evaluate_array,
                               marginal_abatement_cost_array)
-from .surrogate import BayesianLinearSurrogate
+from .surrogate import BayesianLinearSurrogate, cv_noise_precision
 from .uncertainty import propagate_mc, sobol_indices
 from .active_learning import rank_candidates
 from .config import load_scenario, ProvenanceRegistry
@@ -23,7 +23,8 @@ from .calibration import (coverage_report, miscalibration_area,
 __all__ = ["Quantity", "DataTier", "Reaction", "Candidate", "REACTIONS",
            "RXN_METHANOL", "RXN_FORMATE", "RXN_CO", "Scenario",
            "evaluate_array", "marginal_abatement_cost_array",
-           "BayesianLinearSurrogate", "propagate_mc", "sobol_indices",
+           "BayesianLinearSurrogate", "cv_noise_precision",
+           "propagate_mc", "sobol_indices",
            "rank_candidates", "load_scenario", "ProvenanceRegistry",
            "coverage_report", "miscalibration_area", "TemperatureScaler",
            "SplitConformal", "CalibratedSurrogate"]
@@ -91,3 +92,17 @@ __all__ += ["load_table","resolve_columns","species_of","to_descriptor_activity"
 # data-quality guards (honest behaviour on low-quality inputs)
 from .quality import data_quality_report, QualityReport  # noqa: E402
 __all__ += ["data_quality_report","QualityReport"]
+
+# HEA multi-sheet DFT workbook: per-configuration intermediate join (CO/CHO/COOH)
+from .hea import (load_workbook, load_sheet, join_intermediates,          # noqa: E402
+                  pathway_coverage, to_activity_table, decode_site,
+                  assert_no_leakage, check_energy_reference,
+                  che_reference_shift, to_che_formation_energies,
+                  convert_rows_to_che, SPECIES_COMPOSITION,
+                  SheetData, JoinReport, ELEMENT_BY_DESCRIPTOR)
+__all__ += ["load_workbook", "load_sheet", "join_intermediates",
+            "pathway_coverage", "to_activity_table", "decode_site",
+            "assert_no_leakage", "check_energy_reference",
+            "che_reference_shift", "to_che_formation_energies",
+            "convert_rows_to_che", "SPECIES_COMPOSITION", "SheetData",
+            "JoinReport", "ELEMENT_BY_DESCRIPTOR"]

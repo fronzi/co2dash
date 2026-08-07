@@ -124,10 +124,10 @@ from .chain import (ChainProvenance, ChainResult, EnsemblePrediction,     # noqa
                     train_intermediate_models, predict_composition,
                     apply_reference, run_chain, rank_compositions,
                     pds_uniform, applicability_report, SPREAD_ALARM_RATIO,
-                    DFT, ASSUMED)
+                    validate_pathway, PathwayValidation, DFT, ASSUMED)
 __all__ += ["ChainProvenance", "ChainResult", "EnsemblePrediction",
             "IntermediateModel", "ReferenceFrame", "REFERENCE_MODES",
             "train_intermediate_models", "predict_composition",
             "apply_reference", "run_chain", "rank_compositions",
             "pds_uniform", "applicability_report", "SPREAD_ALARM_RATIO",
-            "DFT", "ASSUMED"]
+            "validate_pathway", "PathwayValidation", "DFT", "ASSUMED"]

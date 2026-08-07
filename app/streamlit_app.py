@@ -130,6 +130,7 @@ if region_code is not None:
 KPI_ORIGIN = {"faradaic_efficiency": "assumed", "cell_voltage": "assumed"}
 _chain_v = st.session_state.get("chain_v_cell")
 _chain_label = st.session_state.get("chain_label", "")
+_chain_unsourced = bool(st.session_state.get("chain_unsourced_anchor"))
 if _chain_v is not None:
     import dataclasses as _dc
     base = _dc.replace(base, cell_voltage=float(_chain_v))
@@ -187,6 +188,15 @@ st.markdown(f"""
 # provenance strip: which KPIs are model-driven and which are assumed
 _dft_kpis = sorted(k for k, v in KPI_ORIGIN.items() if v == "DFT")
 _assumed = sorted(k for k, v in KPI_ORIGIN.items() if v != "DFT")
+if _chain_unsourced:
+    st.error(
+        "**These numbers are not quotable.** The cell voltage driving this "
+        "verdict comes from a limiting potential fixed by an **unsourced anchor**. "
+        "The anchor sets a constant added to every U_L, so the MAC shown here "
+        "moves rigidly with a value nobody has cited. Rankings between "
+        "compositions are unaffected; the absolute figures are not defensible "
+        "until you supply a cited anchor U_L, or your own gas-phase reference "
+        "energies in 'absolute' mode.")
 if _dft_kpis:
     st.markdown(
         f'<span class="cap">Verdict provenance — <b>DFT-driven:</b> '
@@ -524,6 +534,12 @@ with t7:
                     u_anchor = a2.number_input("Anchor known U_L [V vs RHE]", value=-0.45,
                                                step=0.01, format="%.3f")
                     src = st.text_input("Anchor source (cite it)", value="")
+                    if not src.strip():
+                        st.warning(
+                            "No source given for the anchor. The anchor fixes a "
+                            "constant added to every U_L, so an uncited value makes "
+                            "every absolute MAC unquotable — the ranking survives, "
+                            "the numbers do not.")
                     frame = ReferenceFrame(mode="anchored",
                                            anchor_energies={"COOH": e_anchor},
                                            anchor_U_L=u_anchor, anchor_source=src)
@@ -578,6 +594,8 @@ with t7:
                                   help=f"±{res.v_cell_sd:.3f} eV from the surrogate")
                         st.session_state["chain_v_cell"] = res.v_cell
                         st.session_state["chain_label"] = f"{comp.label()}, {mode}"
+                        st.session_state["chain_unsourced_anchor"] = (
+                            mode == "anchored" and not (frame.anchor_source or "").strip())
                         st.success("Cell voltage pushed to the headline verdict. "
                                    "Rerun happens on the next interaction.")
                     else:
@@ -596,3 +614,4 @@ with t7:
                 if st.button("Clear DFT-driven voltage (back to slider)", key="c_clear"):
                     st.session_state.pop("chain_v_cell", None)
                     st.session_state.pop("chain_label", None)
+                    st.session_state.pop("chain_unsourced_anchor", None)

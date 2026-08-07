@@ -43,7 +43,7 @@ import numpy as np
 
 from .composition import (Composition, align_to_training_columns,
                           descriptors_for_composition, sro_note)
-from .hea import SheetData, to_che_formation_energies
+from .hea import SheetData, join_intermediates, to_che_formation_energies
 from .proxy import PATHWAYS, limiting_potential, proxy_cell_voltage
 from .surrogate import BayesianLinearSurrogate
 from .techno_economic import Scenario
@@ -414,6 +414,129 @@ def run_chain(comp: Composition,
 def _with_cell_voltage(base: Scenario, v_cell: float) -> Scenario:
     import dataclasses
     return dataclasses.replace(base, cell_voltage=float(v_cell))
+
+
+# ---------------------------------------------------------------------------
+# end-to-end validation on configurations where every intermediate was computed
+# ---------------------------------------------------------------------------
+def _sheet_excluding(sd: SheetData, drop_keys) -> SheetData:
+    """Copy of a sheet with the given configuration keys removed."""
+    drop = set(drop_keys)
+    keep = [i for i, k in enumerate(sd.keys) if k not in drop]
+    idx = np.asarray(keep, int)
+    return SheetData(species=sd.species, X=sd.X[idx], y=sd.y[idx],
+                     feature_names=list(sd.feature_names),
+                     keys=[sd.keys[i] for i in keep],
+                     site1=[sd.site1[i] for i in keep],
+                     warnings=list(sd.warnings))
+
+
+@dataclass
+class PathwayValidation:
+    """How well a surrogate-driven U_L reproduces the DFT-computed one."""
+    n: int
+    species: List[str]
+    e_ads_rmse: Dict[str, float]
+    u_l_true: np.ndarray
+    u_l_pred: np.ndarray
+    u_l_rmse: float
+    u_l_bias: float
+    u_l_rank_corr: float
+    pds_agreement: float
+    amplification: Dict[str, float]      # U_L error / that species' E_ads error
+    n_train_after_holdout: Dict[str, int]
+
+    def summary(self) -> str:
+        eads = ", ".join(f"*{k} {v:.3f}" for k, v in sorted(self.e_ads_rmse.items()))
+        return (f"n={self.n} held-out configurations | E_ads RMSE (eV): {eads} | "
+                f"U_L RMSE {self.u_l_rmse:.3f} V, bias {self.u_l_bias:+.3f} V, "
+                f"rank corr {self.u_l_rank_corr:.3f}, PDS agreement "
+                f"{self.pds_agreement:.0%}")
+
+
+def validate_pathway(sheets: Dict[str, SheetData],
+                     frame: "ReferenceFrame",
+                     product: str = "CO",
+                     seed: int = 0) -> PathwayValidation:
+    """Hold out every configuration for which ALL required intermediates were
+    computed, retrain on the remainder, and check whether the surrogate-driven
+    limiting potential reproduces the DFT one.
+
+    This is the only test that exercises the WHOLE chain on real data --
+    including the max() over PCET steps, which is where per-species errors can
+    amplify: an error in whichever step is limiting passes straight into U_L,
+    and an error large enough to swap which step limits produces a
+    discontinuous jump.
+
+    Retraining after the hold-out is essential. The joined configurations are
+    part of every sheet, so evaluating without removing them would measure
+    memorisation, not generalisation.
+    """
+    if not frame.gives_absolute_U_L():
+        raise ValueError(
+            "validation needs a reference frame that yields an absolute U_L "
+            "('anchored' or 'absolute'); in 'relative' mode there is no U_L to "
+            "compare against.")
+
+    needed = sorted({s for step in PATHWAYS[product] for s in step} - {"CO2"})
+    missing = [s for s in needed if s not in sheets]
+    if missing:
+        raise KeyError(f"the {product} pathway needs {needed}; missing {missing}")
+
+    rows, _ = join_intermediates(sheets, needed)
+    if not rows:
+        raise ValueError(f"no configuration carries all of {needed}")
+    hold = [r["key"] for r in rows]
+
+    trimmed = {sp: _sheet_excluding(sheets[sp], hold) for sp in needed}
+    models = train_intermediate_models(trimmed)
+
+    # predict each intermediate on the held-out descriptor vectors
+    pred: Dict[str, np.ndarray] = {}
+    true: Dict[str, np.ndarray] = {}
+    X_hold = np.asarray([[r["descriptors"][c] for c in sheets[needed[0]].feature_names]
+                         for r in rows], float)
+    for sp in needed:
+        im = models[sp]
+        mu, _ = im.predict(align_to_training_columns(X_hold, im.feature_names))
+        pred[sp] = np.asarray(mu, float)
+        true[sp] = np.asarray([r["energies"][sp] for r in rows], float)
+
+    u_true, u_pred, pds_true, pds_pred = [], [], [], []
+    for i in range(len(rows)):
+        lp_t = limiting_potential(apply_reference({s: float(true[s][i]) for s in needed},
+                                                  frame, product), product)
+        lp_p = limiting_potential(apply_reference({s: float(pred[s][i]) for s in needed},
+                                                  frame, product), product)
+        if lp_t is None or lp_p is None:
+            continue
+        u_true.append(lp_t["U_L"]); u_pred.append(lp_p["U_L"])
+        pds_true.append(lp_t["pds"]); pds_pred.append(lp_p["pds"])
+
+    u_true = np.asarray(u_true, float)
+    u_pred = np.asarray(u_pred, float)
+    err = u_pred - u_true
+
+    e_rmse = {sp: float(np.sqrt(np.mean((pred[sp] - true[sp]) ** 2))) for sp in needed}
+    u_rmse = float(np.sqrt(np.mean(err ** 2))) if len(err) else float("nan")
+
+    if len(u_true) > 2 and np.std(u_true) > 0 and np.std(u_pred) > 0:
+        rt = np.argsort(np.argsort(u_true))
+        rp = np.argsort(np.argsort(u_pred))
+        rank_corr = float(np.corrcoef(rt, rp)[0, 1])
+    else:
+        rank_corr = float("nan")
+
+    return PathwayValidation(
+        n=len(u_true), species=needed, e_ads_rmse=e_rmse,
+        u_l_true=u_true, u_l_pred=u_pred, u_l_rmse=u_rmse,
+        u_l_bias=float(np.mean(err)) if len(err) else float("nan"),
+        u_l_rank_corr=rank_corr,
+        pds_agreement=float(np.mean([a == b for a, b in zip(pds_true, pds_pred)]))
+        if pds_true else float("nan"),
+        amplification={sp: (u_rmse / e_rmse[sp]) if e_rmse[sp] > 1e-12 else float("inf")
+                       for sp in needed},
+        n_train_after_holdout={sp: len(trimmed[sp]) for sp in needed})
 
 
 def applicability_report(models: Dict[str, IntermediateModel]) -> Dict[str, Dict]:

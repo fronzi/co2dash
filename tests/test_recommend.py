@@ -44,7 +44,7 @@ def test_closing_note_is_derived_not_asserted():
             assert "no claim is made" in last
         else:
             # it must name the input the analysis actually found
-            label = {"faradaic_efficiency": "araday", "cell_voltage": "ell voltage",
+            label = {"faradaic_efficiency": "aradaic", "cell_voltage": "ell voltage",
                      "grid_intensity": "rid intensity", "c_elec": "lectricity price",
                      "capex_total": "APEX"}[r.top_uncertainty]
             assert label in last

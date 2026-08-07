@@ -51,6 +51,8 @@ class Recommendation:
     next_candidate: Optional[str] = None
     top_uncertainty: Optional[str] = None   # biggest driver of MAC variance
     top_uncertainty_ST: float = 0.0
+    sobol_reliable: bool = False
+    sobol_reason: str = ""
     steps: List[str] = field(default_factory=list)
 
     @property
@@ -184,6 +186,7 @@ def recommend(base: Scenario, carbon_price_usd_per_kg: float,
     # dominant controllable lever via Sobol (only if climate-positive enough to matter)
     dominant, dom_ST = None, 0.0
     top_uncertainty, top_ST = None, 0.0
+    sobol_reliable, sobol_reason = False, ""
     tgt_field, tgt_val, reachable = None, None, False
     if p_net >= 0.2:
         bounds = _bounds_from_distributions(dists, base)
@@ -192,13 +195,20 @@ def recommend(base: Scenario, carbon_price_usd_per_kg: float,
         # propagate with an actionable message; only genuine numerical failures
         # of the analysis itself degrade to None.
         try:
-            S = sobol_indices(base, bounds, n=512)
+            S, sdiag = sobol_indices(base, bounds, n=512,
+                                     carbon_price_usd_per_kg=carbon_price_usd_per_kg,
+                                     return_diagnostics=True)
         except ImportError as exc:                       # dependency, not a finding
             raise ImportError(
                 "Sobol sensitivity requires SALib (declared in pyproject "
                 "dependencies). Install it with `pip install SALib` -- without "
                 "it the dominant-lever recommendation cannot be computed and "
                 "must not be reported as absent.") from exc
+        except ValueError:            # e.g. every draw non-finite: no variance to attribute
+            S, sdiag = {}, {"reliable": False,
+                            "reason": "no MAC variance could be attributed"}
+        sobol_reliable = bool(sdiag.get("reliable", False))
+        sobol_reason = str(sdiag.get("reason", ""))
         # Two different questions, deliberately answered separately:
         #  * top_uncertainty -- which input's OWN uncertainty drives the spread in
         #    MAC. This is what to go and measure. It may be an input you cannot
@@ -226,7 +236,8 @@ def recommend(base: Scenario, carbon_price_usd_per_kg: float,
         grid_ok=grid_ok, dominant_lever=dominant, dominant_ST=dom_ST,
         target_field=tgt_field, target_value=tgt_val, target_reachable=reachable,
         next_candidate=next_candidate,
-        top_uncertainty=top_uncertainty, top_uncertainty_ST=top_ST)
+        top_uncertainty=top_uncertainty, top_uncertainty_ST=top_ST,
+        sobol_reliable=sobol_reliable, sobol_reason=sobol_reason)
     rec.steps = _compose(base, rec, carbon_price_usd_per_kg)
     return rec
 
@@ -285,12 +296,10 @@ def _compose(base: Scenario, r: Recommendation, cp: float) -> List[str]:
         # sample contains non-finite draws (net abatement <= 0), which
         # uncertainty.sobol_indices replaces with a large penalty value that
         # inflates the variance. Say so rather than quoting the number.
-        if r.top_uncertainty_ST > 1.0:
-            s.append(f"Sensitivity is unreliable for this scenario: the total-order "
-                     f"index for {lab} came out at {r.top_uncertainty_ST:.2f}, and a "
-                     f"variance fraction cannot exceed 1. This happens when part of "
-                     f"the MAC sample is non-finite (net abatement ≤ 0). Treat the "
-                     f"ranking as indicative only.")
+        if not r.sobol_reliable:
+            s.append(f"Sensitivity is not reliable for this scenario ({r.sobol_reason}), "
+                     f"so the apparent top contributor ({lab}) is reported as "
+                     f"indicative only, not as a finding.")
         elif r.top_uncertainty == r.dominant_lever:
             s.append(f"{lab_cap} is both the biggest lever and the biggest source of "
                      f"spread in MAC (ST={r.top_uncertainty_ST:.2f}) — improving it "

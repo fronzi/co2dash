@@ -8,8 +8,8 @@ import numpy as np
 import pytest
 
 from co2dash.chain import (ASSUMED, DFT, ChainProvenance, ReferenceFrame,
-                           apply_reference, pds_uniform, predict_composition,
-                           rank_compositions, run_chain,
+                           applicability_report, apply_reference, pds_uniform,
+                           predict_composition, rank_compositions, run_chain,
                            train_intermediate_models)
 from co2dash.composition import (Composition, DESCRIPTOR_BY_ELEMENT, ELEMENTS,
                                  align_to_training_columns,
@@ -266,6 +266,113 @@ def test_reference_free_ranking_matches_absolute_only_when_the_pds_is_common(mod
 def test_relative_mode_states_its_pds_assumption(models, base):
     r = run_chain(Composition.equimolar(), models, base)
     assert any("potential-determining" in n for n in r.provenance.notes)
+
+
+# --------------------------------------------------------- applicability domain
+def _sheet_missing_cu(species, n=120, seed=7):
+    """A sheet that never places Cu at the adsorption site -- the situation in
+    the published *CO sheet."""
+    rng = np.random.default_rng(seed)
+    others = [e for e in ELEMENTS if e != "Cu"]
+    configs = rng.choice(ELEMENTS, size=(n, 10))
+    configs[:, 0] = rng.choice(others, size=n)          # Cu never at site 1
+    X = configurations_to_descriptors(configs)
+    y = -2.0 + 0.8 * (X[:, 2] - 1.9) + rng.normal(0, 0.02, n)
+    return SheetData(species=species, X=X, y=y, feature_names=feature_names(),
+                     keys=[tuple(r) for r in X], site1=[c for c in configs[:, 0]])
+
+
+@pytest.fixture
+def gapped_models():
+    return train_intermediate_models({"CO": _sheet_missing_cu("CO"),
+                                      "COOH": _sheet("COOH", seed=2)})
+
+
+def test_training_records_which_site1_elements_it_covers(gapped_models):
+    assert "Cu" not in gapped_models["CO"].site1_support
+    assert "Cu" in gapped_models["COOH"].site1_support
+    assert gapped_models["CO"].unsupported(["Cu", "Fe"]) == ["Cu"]
+
+
+def test_applicability_report_names_the_gap(gapped_models):
+    rep = applicability_report(gapped_models)
+    assert rep["CO"]["missing_site1"] == ["Cu"]
+    assert rep["COOH"]["missing_site1"] == []
+    assert sum(rep["CO"]["n_by_site1"].values()) == rep["CO"]["n_train"]
+
+
+def test_out_of_domain_fraction_matches_the_composition(gapped_models):
+    preds = predict_composition(Composition.equimolar(), gapped_models,
+                                n_samples=2000, seed=0)
+    # equimolar over 5 elements -> Cu at site 1 about 20% of the time
+    assert preds["CO"].out_of_domain_fraction == pytest.approx(0.2, abs=0.03)
+    assert preds["COOH"].out_of_domain_fraction == 0.0
+    assert preds["CO"].unsupported_site1 == ["Cu"]
+
+
+def test_extrapolating_prediction_warns_and_supported_one_does_not(gapped_models):
+    preds = predict_composition(Composition.equimolar(), gapped_models, n_samples=500)
+    w = preds["CO"].warning()
+    assert w is not None and "EXTRAPOLATION" in w and "Cu" in w
+    assert preds["COOH"].warning() is None
+    assert preds["CO"].in_domain is False and preds["COOH"].in_domain is True
+
+
+def test_in_domain_statistics_are_computed_over_exactly_the_supported_rows(gapped_models):
+    """Note: a subset's std is NOT bounded by the full set's -- dropping rows
+    from the middle of a distribution can widen it. So the property worth
+    asserting is that the in-domain statistics are the ones over the supported
+    rows, not that they are smaller."""
+    comp = Composition.equimolar()
+    p = predict_composition(comp, gapped_models, n_samples=800, seed=0)["CO"]
+
+    configs = sample_configurations(comp, n_samples=800, seed=0)
+    ok = configs[:, 0] != "Cu"
+    assert p.in_domain_mean == pytest.approx(float(np.mean(p.samples[ok])))
+    assert p.in_domain_sd == pytest.approx(float(np.std(p.samples[ok])))
+    assert p.in_domain_mean != pytest.approx(p.mean)      # the subset differs
+
+
+def test_composition_avoiding_the_gap_is_in_domain(gapped_models):
+    comp = Composition({"Fe": 0.5, "Ni": 0.5})           # no Cu at all
+    preds = predict_composition(comp, gapped_models, n_samples=300)
+    assert preds["CO"].out_of_domain_fraction == 0.0
+    assert preds["CO"].warning() is None
+
+
+def test_fixing_site1_to_a_supported_element_clears_the_warning(gapped_models):
+    preds = predict_composition(Composition.equimolar(), gapped_models,
+                                n_samples=300, fixed_site1="Fe")
+    assert preds["CO"].out_of_domain_fraction == 0.0
+    assert preds["CO"].warning() is None
+
+
+def test_chain_surfaces_extrapolation_in_relative_mode(gapped_models, base):
+    r = run_chain(Composition.equimolar(), gapped_models, base)
+    assert r.extrapolating is True
+    assert r.unsupported_species() == ["CO"]
+    assert any("EXTRAPOLATION" in w for w in r.warnings)
+
+
+def test_extrapolating_voltage_is_flagged_in_the_provenance(gapped_models, base):
+    frame = ReferenceFrame(mode="anchored", anchor_energies={"COOH": -0.9},
+                           anchor_U_L=-0.45)
+    r = run_chain(Composition.equimolar(), gapped_models, base, frame)
+    if r.pds and "CO" in r.pds.split("->"):
+        assert "EXTRAPOLATING" in r.provenance.origins["cell_voltage"]
+        assert any("not supported by the data" in w for w in r.warnings)
+
+
+def test_clean_models_produce_no_extrapolation_warnings(models, base):
+    r = run_chain(Composition.equimolar(), models, base)
+    assert r.extrapolating is False
+    assert r.warnings == []
+
+
+def test_spread_ratio_flags_a_blown_up_ensemble(gapped_models):
+    p = predict_composition(Composition.equimolar(), gapped_models,
+                            n_samples=500)["CO"]
+    assert p.spread_ratio is not None and p.spread_ratio > 0
 
 
 def test_pds_uniform_detects_a_mixed_set():

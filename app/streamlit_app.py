@@ -26,7 +26,8 @@ from co2dash.intake import map_columns, ingest_table
 from co2dash.recommend import recommend
 from co2dash.composition import Composition, ELEMENTS, sro_note
 from co2dash.chain import (ReferenceFrame, train_intermediate_models,
-                           run_chain, rank_compositions, DFT)
+                           run_chain, rank_compositions, applicability_report,
+                           DFT)
 from co2dash.hea import load_workbook
 import ui_charts as ui
 
@@ -272,7 +273,7 @@ with t1:
     with c1:
         st.markdown("**Cost build-up (LCOP)**")
         st.plotly_chart(ui.cost_waterfall(comp_fixed, comp_co2, comp_elec, comp_h2),
-                        use_container_width=True)
+                        width='stretch')
         st.markdown('<span class="cap">Where each dollar of product cost comes from. '
                     'Electricity usually dominates energy-intensive routes.</span>',
                     unsafe_allow_html=True)
@@ -280,13 +281,13 @@ with t1:
         st.markdown("**MAC distribution (Monte-Carlo)**")
         st.plotly_chart(ui.mac_distribution(mc["mac"], carbon_price, mc["mac_p05"],
                                             mc["mac_median"], mc["mac_p95"]),
-                        use_container_width=True)
+                        width='stretch')
         st.markdown(f'<span class="cap">Shaded = feasible draws (MAC &lt; carbon price). '
                     f'Median {mc["mac_median"]:.2f}, P05 {mc["mac_p05"]:.2f}, '
                     f'P95 {mc["mac_p95"]:.2f} $/kg.</span>', unsafe_allow_html=True)
     if registry is not None:
         st.markdown("**Provenance registry** — every number, its uncertainty, and its source")
-        st.dataframe(registry.table(), use_container_width=True, hide_index=True)
+        st.dataframe(registry.table(), width='stretch', hide_index=True)
     else:
         st.info("Load a YAML scenario to see the provenance table "
                 "(value · uncertainty · tier · source) and tier-derived uncertainty.")
@@ -310,7 +311,7 @@ with t2:
                                    yf, np.linspace(y0, y1, 60), carbon_price)
         st.plotly_chart(ui.envelope_heatmap(env["X"], env["Y"], env["mac"],
                                             env["feasible"], xlab, ylab),
-                        use_container_width=True)
+                        width='stretch')
         st.metric("Viable fraction of swept region", f"{env['feasible'].mean():.0%}")
 
 with t3:
@@ -323,7 +324,7 @@ with t3:
     names = sorted(sob, key=lambda k: sob[k]["ST"], reverse=True)
     st.plotly_chart(ui.sobol_tornado(names, [sob[k]["S1"] for k in names],
                                      [sob[k]["ST"] for k in names]),
-                    use_container_width=True)
+                    width='stretch')
     top = names[0]
     st.markdown(f'<span class="cap">Highest total-order term: <b>{top}</b> — pin this down '
                 f'first. Low S1 with high ST means it acts through interactions.</span>',
@@ -353,7 +354,7 @@ with t4:
             f"pred ΔE ·*{_dft_int} (eV)": np.round(mean[order], 3),
             "uncertainty (eV)": np.round(sd[order], 3),
         }).head(15)
-        st.dataframe(tbl, use_container_width=True, hide_index=True)
+        st.dataframe(tbl, width='stretch', hide_index=True)
         st.markdown(f'<span class="cap">Real ACS Catalysis FeCoNiCuMo HEA DFT · '
                     f'target = *{_dft_int} adsorption energy · trained on {len(tr)} '
                     f'alloys · {len(pool)} candidates ranked by predictive uncertainty '
@@ -378,7 +379,7 @@ with t5:
         c1, c2 = st.columns([2, 1])
         with c1:
             st.plotly_chart(ui.reliability_diagram(lv, before, after),
-                            use_container_width=True)
+                            width='stretch')
         with c2:
             st.metric("Temperature scale s", f"{rep.temperature_s:.2f}",
                       help=">1 inflates an over-confident std; <1 shrinks under-confident")
@@ -429,7 +430,7 @@ with t6:
                 "status": "ok" if res.ok else "errors",
                 "flags": len(res.warnings) + len(res.errors),
             })
-        st.dataframe(table, use_container_width=True, hide_index=True)
+        st.dataframe(table, width='stretch', hide_index=True)
 
         idx = st.number_input("Inspect row", 0, max(0, len(results) - 1), 0, key="ud_row")
         res = results[idx]
@@ -472,6 +473,29 @@ with t7:
             st.caption(f"Trained per intermediate on: "
                        + ", ".join(f"*{k} (n={len(v)})" for k, v in sorted(_wb.items())))
             cmodels = train_intermediate_models(_wb)
+
+            _appl = applicability_report(cmodels)
+            _gaps = {k: v["missing_site1"] for k, v in _appl.items() if v["missing_site1"]}
+            with st.expander("Applicability domain — what this workbook supports",
+                             expanded=bool(_gaps)):
+                st.dataframe(
+                    [{"intermediate": f"*{k}", "n": v["n_train"],
+                      "site-1 elements covered": ", ".join(v["site1_support"]),
+                      "NOT covered": ", ".join(v["missing_site1"]) or "—",
+                      "train sd (eV)": round(v["train_sd_eV"], 3)}
+                     for k, v in _appl.items()],
+                    width='stretch', hide_index=True)
+                if _gaps:
+                    st.warning(
+                        "The sheets do not cover the same adsorption-site elements. "
+                        "Predictions for a composition containing an uncovered "
+                        "element are extrapolation, and the model's own error bar "
+                        "does not detect it: the element appears in the environment "
+                        "columns, so its descriptor values look in-range and the "
+                        "novelty is only in the joint position, which a linear model "
+                        "cannot see. Affected: "
+                        + "; ".join(f"*{k} missing {', '.join(v)}"
+                                    for k, v in _gaps.items()))
 
             c1, c2 = st.columns([2, 1])
             with c1:
@@ -529,10 +553,22 @@ with t7:
                                     fixed_site1=None if site1 == "(sampled)" else site1)
                     cols = st.columns(len(res.predictions))
                     for col, (sp, p) in zip(cols, sorted(res.predictions.items())):
-                        col.metric(f"ΔE *{sp}", f"{p.mean:.3f} eV",
+                        _ood = p.warning() is not None
+                        col.metric(f"ΔE *{sp}" + ("  ⚠︎" if _ood else ""),
+                                   f"{p.mean:.3f} eV",
                                    help="ensemble mean over sampled configurations")
                         col.caption(f"configurational ±{p.configurational_sd:.3f} · "
                                     f"model ±{p.model_sd:.3f} eV")
+                        if _ood:
+                            col.error(p.warning())
+                            if p.in_domain_mean is not None:
+                                col.caption(
+                                    f"in-domain only ({1 - p.out_of_domain_fraction:.0%} "
+                                    f"of configs): {p.in_domain_mean:.3f} "
+                                    f"± {p.in_domain_sd:.3f} eV")
+
+                    for w in res.warnings:
+                        st.error(w)
 
                     if res.v_cell is not None:
                         m1, m2, m3 = st.columns(3)

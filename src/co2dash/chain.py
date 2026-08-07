@@ -91,9 +91,16 @@ class IntermediateModel:
     feature_names: List[str]
     n_train: int
     sigma_eV: float
+    site1_support: frozenset = frozenset()   # adsorption-site elements seen in training
+    n_by_site1: Dict[str, int] = field(default_factory=dict)
+    train_sd_eV: float = 0.0                 # spread of the training targets
 
     def predict(self, X: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         return self.model.predict(X)
+
+    def unsupported(self, elements) -> List[str]:
+        """Which of `elements` never occupied the adsorption site in training."""
+        return sorted(set(elements) - set(self.site1_support))
 
 
 def train_intermediate_models(sheets: Dict[str, SheetData],
@@ -104,21 +111,36 @@ def train_intermediate_models(sheets: Dict[str, SheetData],
     Training per sheet rather than on the sheets' intersection is deliberate:
     the sheets share few configurations, so intersecting would discard most of
     the data. The intersection is better spent as a validation set.
+
+    The site-1 support is recorded because the sheets do NOT cover the same
+    adsorption-site elements (in the published workbook the *CO sheet contains
+    no Cu-terminated sites at all). Predicting there is extrapolation, and it is
+    invisible to the model's own uncertainty -- see applicability() below.
     """
     want = list(species) if species is not None else sorted(sheets)
     out: Dict[str, IntermediateModel] = {}
     for sp in want:
         sd = sheets[sp]
         model = BayesianLinearSurrogate().fit_evidence(sd.X, sd.y)
+        counts: Dict[str, int] = {}
+        for e in sd.site1:
+            counts[e] = counts.get(e, 0) + 1
         out[sp] = IntermediateModel(
             species=sp, model=model, feature_names=list(sd.feature_names),
-            n_train=len(sd), sigma_eV=float(1.0 / np.sqrt(model.beta)))
+            n_train=len(sd), sigma_eV=float(1.0 / np.sqrt(model.beta)),
+            site1_support=frozenset(counts) - {"?"}, n_by_site1=counts,
+            train_sd_eV=float(np.std(sd.y)))
     return out
 
 
 # ---------------------------------------------------------------------------
 # composition -> predicted adsorption energies
 # ---------------------------------------------------------------------------
+# A configurational spread this many times the training spread is a symptom of
+# extrapolation rather than physical diversity.
+SPREAD_ALARM_RATIO = 1.5
+
+
 @dataclass
 class EnsemblePrediction:
     """Predicted E_ads over the configurational ensemble of one composition."""
@@ -127,6 +149,12 @@ class EnsemblePrediction:
     configurational_sd: float    # spread across configurations
     model_sd: float              # mean predictive (model) uncertainty
     samples: np.ndarray          # per-configuration predictive means
+    # --- applicability domain ---
+    out_of_domain_fraction: float = 0.0
+    unsupported_site1: List[str] = field(default_factory=list)
+    in_domain_mean: Optional[float] = None
+    in_domain_sd: Optional[float] = None
+    spread_ratio: Optional[float] = None    # configurational_sd / training sd
 
     @property
     def total_sd(self) -> float:
@@ -134,23 +162,70 @@ class EnsemblePrediction:
         different things and are kept separate above; this is for propagation."""
         return float(np.sqrt(self.configurational_sd ** 2 + self.model_sd ** 2))
 
+    @property
+    def in_domain(self) -> bool:
+        return self.out_of_domain_fraction == 0.0
+
+    def warning(self) -> Optional[str]:
+        """Human-readable reason this prediction should not be trusted, or None.
+
+        Two independent symptoms are reported because the model's own predictive
+        std does NOT catch this failure: an element absent from the adsorption
+        site in training still has in-range descriptor values (it appears in the
+        environment columns), so phi^T S phi stays small for a linear model. The
+        novelty is in the JOINT position, which a linear model cannot see.
+        """
+        parts = []
+        if self.unsupported_site1:
+            parts.append(
+                f"{self.out_of_domain_fraction:.0%} of sampled configurations put "
+                f"{', '.join(self.unsupported_site1)} at the adsorption site, which "
+                f"never occurs in the *{self.species} training data")
+        if self.spread_ratio is not None and self.spread_ratio > SPREAD_ALARM_RATIO:
+            parts.append(
+                f"configurational spread is {self.spread_ratio:.1f}x the spread of "
+                f"the training targets, a symptom of extrapolation rather than "
+                f"physical diversity")
+        if not parts:
+            return None
+        return ("EXTRAPOLATION — " + "; ".join(parts) +
+                ". The model's own uncertainty does not detect this. Treat this "
+                "value as unsupported.")
+
 
 def predict_composition(comp: Composition,
                         models: Dict[str, IntermediateModel],
                         n_samples: int = 500,
                         fixed_site1: Optional[str] = None,
                         seed: int = 0) -> Dict[str, EnsemblePrediction]:
-    """Predict every trained intermediate for one composition."""
-    X_gen, _ = descriptors_for_composition(comp, n_samples=n_samples,
-                                           fixed_site1=fixed_site1, seed=seed)
+    """Predict every trained intermediate for one composition.
+
+    Also evaluates the applicability domain per species and, where part of the
+    ensemble is out of domain, reports in-domain-only statistics alongside the
+    full-ensemble ones so there is a usable fallback rather than just a warning.
+    """
+    X_gen, configs = descriptors_for_composition(comp, n_samples=n_samples,
+                                                 fixed_site1=fixed_site1, seed=seed)
+    site1 = np.asarray([str(s) for s in configs[:, 0]])
+
     out: Dict[str, EnsemblePrediction] = {}
     for sp, im in models.items():
         X = align_to_training_columns(X_gen, im.feature_names)
         mu, sd = im.predict(X)
+
+        unsupported = im.unsupported(np.unique(site1))
+        ok = ~np.isin(site1, list(unsupported)) if unsupported else np.ones(len(mu), bool)
+        ood = float(1.0 - ok.mean())
+        cfg_sd = float(np.std(mu))
+
         out[sp] = EnsemblePrediction(
             species=sp, mean=float(np.mean(mu)),
-            configurational_sd=float(np.std(mu)),
-            model_sd=float(np.mean(sd)), samples=np.asarray(mu, float))
+            configurational_sd=cfg_sd,
+            model_sd=float(np.mean(sd)), samples=np.asarray(mu, float),
+            out_of_domain_fraction=ood, unsupported_site1=unsupported,
+            in_domain_mean=float(np.mean(mu[ok])) if ok.any() else None,
+            in_domain_sd=float(np.std(mu[ok])) if ok.any() else None,
+            spread_ratio=(cfg_sd / im.train_sd_eV) if im.train_sd_eV > 1e-9 else None)
     return out
 
 
@@ -226,6 +301,16 @@ class ChainResult:
     v_cell: Optional[float] = None
     v_cell_sd: Optional[float] = None
     relative_score: Optional[float] = None
+    warnings: List[str] = field(default_factory=list)
+
+    @property
+    def extrapolating(self) -> bool:
+        """True if any intermediate used here fell outside its training domain."""
+        return any(p.warning() is not None for p in self.predictions.values())
+
+    def unsupported_species(self) -> List[str]:
+        return sorted(sp for sp, p in self.predictions.items()
+                      if p.warning() is not None)
 
 
 def run_chain(comp: Composition,
@@ -256,6 +341,14 @@ def run_chain(comp: Composition,
 
     res = ChainResult(composition=comp, predictions=preds, provenance=prov)
 
+    # applicability domain: surface every extrapolating intermediate before any
+    # number derived from it is shown
+    for sp in sorted(preds):
+        w = preds[sp].warning()
+        if w:
+            res.warnings.append(f"*{sp}: {w}")
+            prov.notes.append(f"*{sp} is out of the training domain.")
+
     e_ads = {sp: p.mean for sp, p in preds.items()}
 
     if not frame.gives_absolute_U_L():
@@ -275,6 +368,10 @@ def run_chain(comp: Composition,
             # lower (more negative) E_ads of the first intermediate = more active,
             # exactly determined by the data up to the common unknown constant
             res.relative_score = -e_ads[first_product]
+            if preds[first_product].warning():
+                res.warnings.append(
+                    f"the relative activity score rests on *{first_product}, "
+                    f"which is extrapolating — the ranking is unreliable")
         res.scenario = base
         return res
 
@@ -295,6 +392,16 @@ def run_chain(comp: Composition,
     res.U_L, res.overpotential, res.pds = lp["U_L"], lp["overpotential"], lp["pds"]
     res.v_cell, res.v_cell_sd = v, float(sd)
     prov.origins["cell_voltage"] = DFT
+
+    # a voltage derived from an extrapolating intermediate must say so, loudly:
+    # it propagates straight into the headline MAC
+    ood = [sp for sp in lp["pds"].split("->") if sp in preds and preds[sp].warning()]
+    if ood:
+        res.warnings.append(
+            f"cell voltage is derived from the potential-determining step "
+            f"{lp['pds']}, which uses extrapolating intermediate(s) "
+            f"{', '.join(ood)} — the resulting MAC is not supported by the data")
+        prov.origins["cell_voltage"] = DFT + " (EXTRAPOLATING)"
     if frame.mode == "anchored":
         prov.notes.append(
             f"Absolute U_L rests on a single anchor ({frame.anchor_source or 'unspecified'}); "
@@ -307,6 +414,24 @@ def run_chain(comp: Composition,
 def _with_cell_voltage(base: Scenario, v_cell: float) -> Scenario:
     import dataclasses
     return dataclasses.replace(base, cell_voltage=float(v_cell))
+
+
+def applicability_report(models: Dict[str, IntermediateModel]) -> Dict[str, Dict]:
+    """Which adsorption-site elements each trained intermediate actually covers.
+
+    Answers 'what can this workbook support?' before you predict anything. On the
+    published file the *CO sheet has no Cu-terminated sites, so every Cu-bearing
+    composition extrapolates for that intermediate.
+    """
+    all_elements = set()
+    for im in models.values():
+        all_elements |= set(im.site1_support)
+    return {sp: {"n_train": im.n_train,
+                 "site1_support": sorted(im.site1_support),
+                 "missing_site1": sorted(all_elements - set(im.site1_support)),
+                 "n_by_site1": dict(sorted(im.n_by_site1.items())),
+                 "train_sd_eV": im.train_sd_eV}
+            for sp, im in sorted(models.items())}
 
 
 def pds_uniform(results: Sequence[ChainResult]) -> bool:

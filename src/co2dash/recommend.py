@@ -49,6 +49,8 @@ class Recommendation:
     target_value: Optional[float]
     target_reachable: bool
     next_candidate: Optional[str] = None
+    top_uncertainty: Optional[str] = None   # biggest driver of MAC variance
+    top_uncertainty_ST: float = 0.0
     steps: List[str] = field(default_factory=list)
 
     @property
@@ -81,6 +83,60 @@ def _feasible_mask(base: Scenario, field_name: str, values: np.ndarray,
     mac = out["mac_usd_per_kg_co2"]
     net = out["net_abatement_kg_per_kg"]
     return np.isfinite(mac) & (mac < carbon_price) & (net > 0)
+
+
+_Z90 = 1.6448536269514722          # 5th/95th percentile of the standard normal
+
+# physical clips applied after converting a distribution to a sweep range
+_FIELD_CLIPS = {
+    "faradaic_efficiency": (1e-3, 1.0),
+    "cell_voltage": (1e-2, None),
+    "grid_intensity": (0.0, None),
+    "c_elec": (0.0, None),
+    "capex_total": (0.0, None),
+    "c_co2": (0.0, None),
+}
+
+
+def _bounds_from_distributions(dists: Dict[str, tuple], base: Scenario
+                               ) -> Dict[str, tuple]:
+    """Sobol ranges taken from the SAME distributions the Monte-Carlo uses.
+
+    Previously the ranges were hand-written multipliers: +/-30% for most inputs
+    but (0, 1.5x) for grid_intensity. Sobol indices are defined RELATIVE to the
+    input ranges you choose, so giving one input a range three times wider than
+    the others made it the 'dominant lever' almost by construction -- it came out
+    top in 5 of 7 unrelated scenarios, including one where CAPEX had been
+    quadrupled.
+
+    Deriving the ranges from the actual uncertainty distributions makes the
+    sensitivity analysis answer the decision-relevant question ('given what we
+    genuinely do not know, what drives the answer?') and keeps it consistent
+    with the MC that produced the verdict.
+    """
+    out: Dict[str, tuple] = {}
+    for f, d in dists.items():
+        if not hasattr(base, f):
+            continue
+        kind = d[0]
+        if kind == "normal":
+            lo, hi = d[1] - _Z90 * d[2], d[1] + _Z90 * d[2]
+        elif kind == "lognormal":                       # d = (median, geo-sd)
+            gsd = max(float(d[2]), 1.0 + 1e-9)
+            lo, hi = d[1] * gsd ** -_Z90, d[1] * gsd ** _Z90
+        elif kind == "uniform":
+            lo, hi = d[1], d[2]
+        else:
+            continue
+        clip_lo, clip_hi = _FIELD_CLIPS.get(f, (None, None))
+        if clip_lo is not None:
+            lo = max(lo, clip_lo)
+        if clip_hi is not None:
+            hi = min(hi, clip_hi)
+        if hi <= lo:                                    # degenerate: nothing to vary
+            continue
+        out[f] = (float(lo), float(hi))
+    return out
 
 
 def _target_value(base: Scenario, field_name: str, carbon_price: float):
@@ -127,17 +183,10 @@ def recommend(base: Scenario, carbon_price_usd_per_kg: float,
 
     # dominant controllable lever via Sobol (only if climate-positive enough to matter)
     dominant, dom_ST = None, 0.0
+    top_uncertainty, top_ST = None, 0.0
     tgt_field, tgt_val, reachable = None, None, False
     if p_net >= 0.2:
-        bounds = {}
-        for f in _LEVERS:
-            v = getattr(base, f)
-            if f == "faradaic_efficiency":
-                bounds[f] = (max(0.05, v * 0.7), min(1.0, v * 1.3))
-            elif f == "grid_intensity":
-                bounds[f] = (0.0, max(0.1, v * 1.5))
-            else:
-                bounds[f] = (v * 0.7, v * 1.3)
+        bounds = _bounds_from_distributions(dists, base)
         # NOTE: a missing SALib must NOT be silently reported as 'no dominant
         # lever' -- that is an unavailable analysis, not a result. Import errors
         # propagate with an actionable message; only genuine numerical failures
@@ -150,11 +199,22 @@ def recommend(base: Scenario, carbon_price_usd_per_kg: float,
                 "dependencies). Install it with `pip install SALib` -- without "
                 "it the dominant-lever recommendation cannot be computed and "
                 "must not be reported as absent.") from exc
+        # Two different questions, deliberately answered separately:
+        #  * top_uncertainty -- which input's OWN uncertainty drives the spread in
+        #    MAC. This is what to go and measure. It may be an input you cannot
+        #    control (e.g. electricity price).
+        #  * dominant -- which CONTROLLABLE lever matters most. This is what to
+        #    go and engineer.
+        # Conflating them is how a recommendation ends up telling you to tighten
+        # something the sensitivity analysis never identified.
         try:
-            dominant, dom_ST = max(((k, s["ST"]) for k, s in S.items()),
-                                   key=lambda kv: kv[1])
+            top_uncertainty, top_ST = max(((k, s["ST"]) for k, s in S.items()),
+                                          key=lambda kv: kv[1])
         except (ValueError, KeyError, TypeError):        # analysis returned nothing usable
-            dominant, dom_ST = None, 0.0
+            top_uncertainty, top_ST = None, 0.0
+        controllable = [(k, s["ST"]) for k, s in S.items() if k in _LEVERS]
+        if controllable:
+            dominant, dom_ST = max(controllable, key=lambda kv: kv[1])
         if dominant is not None:
             tgt_field = dominant
             tgt_val, reachable = _target_value(base, dominant, carbon_price_usd_per_kg)
@@ -165,7 +225,8 @@ def recommend(base: Scenario, carbon_price_usd_per_kg: float,
         mac_p95=mc["mac_p95"] * 1000, net_abatement=net, breakeven_grid=bg,
         grid_ok=grid_ok, dominant_lever=dominant, dominant_ST=dom_ST,
         target_field=tgt_field, target_value=tgt_val, target_reachable=reachable,
-        next_candidate=next_candidate)
+        next_candidate=next_candidate,
+        top_uncertainty=top_uncertainty, top_uncertainty_ST=top_ST)
     rec.steps = _compose(base, rec, carbon_price_usd_per_kg)
     return rec
 
@@ -211,12 +272,35 @@ def _compose(base: Scenario, r: Recommendation, cp: float) -> List[str]:
     if r.next_candidate:
         s.append(f"Best next calculation/experiment: candidate '{r.next_candidate}' "
                  f"(highest information gain toward the viability decision).")
-    else:
-        s.append("To choose the next catalyst to compute, load candidate descriptors "
-                 "into the Active-learning tab; the top-ranked one is the most "
-                 "informative next DFT run.")
 
-    # 5. honesty note
-    s.append("Note: MAC uncertainty is dominated by CAPEX (an ESTIMATED input). "
-             "Tighten it with a costed design before quoting a single number.")
+    # 5. what to go and MEASURE (as opposed to engineer) -- derived from the
+    #    Sobol result, never asserted. This bullet previously hard-coded
+    #    "uncertainty is dominated by CAPEX", which contradicted the analysis
+    #    printed two bullets above whenever the top contributor was anything else.
+    if r.top_uncertainty is not None:
+        lab = _LABEL.get(r.top_uncertainty, r.top_uncertainty)
+        lab_cap = lab[0].upper() + lab[1:]          # not .capitalize(): keeps kgCO₂/kWh
+        # A total-order index above 1 is not a stronger finding, it is a broken
+        # estimate: ST is a variance FRACTION. It happens here when the MAC
+        # sample contains non-finite draws (net abatement <= 0), which
+        # uncertainty.sobol_indices replaces with a large penalty value that
+        # inflates the variance. Say so rather than quoting the number.
+        if r.top_uncertainty_ST > 1.0:
+            s.append(f"Sensitivity is unreliable for this scenario: the total-order "
+                     f"index for {lab} came out at {r.top_uncertainty_ST:.2f}, and a "
+                     f"variance fraction cannot exceed 1. This happens when part of "
+                     f"the MAC sample is non-finite (net abatement ≤ 0). Treat the "
+                     f"ranking as indicative only.")
+        elif r.top_uncertainty == r.dominant_lever:
+            s.append(f"{lab_cap} is both the biggest lever and the biggest source of "
+                     f"spread in MAC (ST={r.top_uncertainty_ST:.2f}) — improving it "
+                     f"and pinning it down are the same task.")
+        else:
+            s.append(f"Most of the spread in MAC comes from {lab} "
+                     f"(ST={r.top_uncertainty_ST:.2f}), which is not the lever you "
+                     f"would engineer. Narrowing its uncertainty will sharpen the "
+                     f"answer more than improving any single lever.")
+    else:
+        s.append("No global sensitivity was computed for this scenario, so no "
+                 "claim is made about what drives the uncertainty.")
     return s

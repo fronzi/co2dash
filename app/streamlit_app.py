@@ -159,11 +159,35 @@ else:
                               base.grid_intensity + 0.03)}
 mc = propagate_mc(base, unc, carbon_price, n=40_000, seed=0)
 
+# --------------------------------------------------------------------- build stamp
+# "Is the deployed app actually running the code I just pushed?" is otherwise
+# unanswerable from the browser: Streamlit Community Cloud shows no commit, and a
+# stale environment looks identical to a fresh one. Reading the checked-out SHA
+# at run time makes it observable.
+@st.cache_data(show_spinner=False)
+def _build_stamp():
+    import subprocess, datetime
+    root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+    try:
+        sha = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=root,
+                             capture_output=True, text=True, timeout=5).stdout.strip()
+        when = subprocess.run(["git", "log", "-1", "--format=%cs"], cwd=root,
+                              capture_output=True, text=True, timeout=5).stdout.strip()
+        subj = subprocess.run(["git", "log", "-1", "--format=%s"], cwd=root,
+                              capture_output=True, text=True, timeout=5).stdout.strip()
+    except Exception:
+        sha = when = subj = ""
+    if not sha:
+        return "build: unknown (no git metadata in this deployment)"
+    return f"build {sha} · {when} · {subj[:70]}"
+
+
 # --------------------------------------------------------------------- header + verdict
 st.markdown('<div class="hero-eyebrow">CO₂ utilisation · techno-economic & environmental</div>'
             '<div class="hero-title">Feasibility readout</div>'
             '<div class="hero-sub">Zero new DFT · public data + uncertainty-aware translation layer · '
             'all defaults are illustrative placeholders.</div>', unsafe_allow_html=True)
+st.markdown(f'<span class="cap">{_build_stamp()}</span>', unsafe_allow_html=True)
 
 p_feas, p_net = mc["p_mac_below_carbon_price"], mc["p_net_positive"]
 if p_net < 0.5:

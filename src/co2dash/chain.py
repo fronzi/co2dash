@@ -44,7 +44,8 @@ import numpy as np
 from .composition import (Composition, align_to_training_columns,
                           descriptors_for_composition, sro_note)
 from .hea import SheetData, join_intermediates, to_che_formation_energies
-from .proxy import PATHWAYS, limiting_potential, proxy_cell_voltage
+from .proxy import (PATHWAYS, limiting_analysis, limiting_potential,
+                    proxy_cell_voltage)
 from .surrogate import BayesianLinearSurrogate
 from .techno_economic import Scenario
 
@@ -82,6 +83,17 @@ HEA_CO2RR_BAND = PublishedBand(
     doi="10.1021/acscatal.2c03675",
     note="Value taken from the abstract; whether it covers all sampled sites or "
          "only the designed surface is not established from the abstract alone.")
+
+
+# Gas-phase total energies for the CHE reference frame, VASP PAW-PBE, supplied by
+# the group that ran the HEA slabs. Only valid with THOSE slabs: totals are not
+# transferable between codes or pseudopotential sets.
+# Sanity: CO2 + H2 -> CO + H2O gives +0.700 eV here against an experimental
+# +0.427 eV (RWGS at 298 K). The +0.27 eV excess is the documented GGA CO2
+# overbinding ("OCO backbone") error, not a setup fault -- but note that no
+# correction has been applied, so it propagates into every dG involving CO2.
+VASP_PBE_GAS_REFERENCE = {"CO2": -22.95, "H2": -6.77, "H2O": -14.22}
+VASP_PBE_CO_GAS = -14.80          # only needed for the RWGS sanity check
 
 
 def check_against_published_band(u_l: Sequence[float],
@@ -309,6 +321,10 @@ class ReferenceFrame:
     anchor_U_L: Optional[float] = None                    # 'anchored': its known U_L
     anchor_source: str = ""
     corrections: Optional[Dict[str, float]] = None
+    # G_f of the desorbed product in the CHE frame (for CO2->CO, the reverse
+    # water-gas-shift energy). Supplying it enables the desorption test.
+    gas_formation_energy: Optional[float] = None
+    temperature: float = 298.15
 
     def __post_init__(self):
         if self.mode not in REFERENCE_MODES:
@@ -380,6 +396,9 @@ class ChainResult:
     v_cell: Optional[float] = None
     v_cell_sd: Optional[float] = None
     relative_score: Optional[float] = None
+    dG_desorption: Optional[float] = None
+    coverage: Optional[float] = None
+    limitation: Optional[str] = None
     warnings: List[str] = field(default_factory=list)
 
     @property
@@ -462,6 +481,51 @@ def run_chain(comp: Composition,
                           f"available intermediates {sorted(e_ads)}")
         res.scenario = base
         return res
+
+    # U_L > 0 means every PCET step is downhill at zero potential: the surface is
+    # not activation-limited at all. For CO2->CO that usually means the opposite
+    # problem -- *CO binds so strongly that DESORPTION limits the cycle. That step
+    # is chemical, not electrochemical, so it is absent from the CHE ladder and
+    # this proxy cannot see it. Reporting a near-zero overpotential here would
+    # flatter the catalyst badly.
+    # Desorption is a chemical step: no electrons, so no potential dependence.
+    # When it is the bottleneck, deriving a cell voltage would be meaningless --
+    # polarising the electrode does not remove a bound product.
+    if frame.gas_formation_energy is not None:
+        la = limiting_analysis(che, product, frame.gas_formation_energy,
+                               corrections=frame.corrections,
+                               temperature=frame.temperature)
+        if la is not None:
+            res.dG_desorption = la["dG_desorption"]
+            res.coverage = la["coverage"]
+            res.limitation = la["limitation"]
+            if la["limitation"] == "desorption":
+                res.warnings.append(
+                    f"DESORPTION-LIMITED: every proton-coupled step is downhill "
+                    f"(U_L = {lp['U_L']:+.3f} V) but *{PATHWAYS[product][-1][1]} is "
+                    f"held at equilibrium coverage {la['coverage']:.3f} "
+                    f"(dG_des = {la['dG_desorption']:+.3f} eV). Applied potential "
+                    f"cannot fix this, so no cell voltage is derived — the "
+                    f"limitation is product poisoning, not activation.")
+                prov.origins["cell_voltage"] = ASSUMED
+                prov.notes.append("desorption-limited: V_cell left as your input")
+                res.scenario = base
+                return res
+            if la["poisoned"]:
+                # both limits bind: a potential is needed AND the product stays
+                # put. The voltage below is real but not sufficient.
+                res.warnings.append(
+                    f"also poisoned: equilibrium coverage {la['coverage']:.3f} "
+                    f"(dG_des = {la['dG_desorption']:+.3f} eV). The derived cell "
+                    f"voltage addresses the electrochemical step only; it does "
+                    f"not make this surface turn over.")
+
+    if lp["U_L"] > 0:
+        res.warnings.append(
+            f"U_L = {lp['U_L']:+.3f} V > 0: every proton-coupled step is exergonic "
+            f"at zero potential, so the electrochemistry is not limiting here. "
+            f"Supply gas_formation_energy on the ReferenceFrame to test the "
+            f"desorption limit, which is the usual bottleneck in this regime.")
 
     v = proxy_cell_voltage(lp["overpotential"], v_baseline)
     # propagate the dominant intermediate's uncertainty into the voltage

@@ -1,0 +1,42 @@
+&CONTROL
+  calculation   = 'relax'
+  prefix        = 'h2'
+  outdir        = './tmp'
+  pseudo_dir    = './pseudo'        !! MATCH THE SLABS
+  tprnfor       = .true.
+  tstress       = .false.
+  forc_conv_thr = 1.0d-4
+/
+&SYSTEM
+  ibrav       = 0
+  nat         = 2
+  ntyp        = 1
+  ecutwfc     = 60.0                !! MATCH THE SLABS (Ry)
+  ecutrho     = 480.0               !! MATCH THE SLABS (Ry)
+  occupations = 'fixed'             ! closed-shell singlet: no smearing
+  nspin       = 1                   !! MATCH THE SLABS if they were spin-polarised
+  assume_isolated = 'martyna-tuckerman'
+/
+&ELECTRONS
+  conv_thr     = 1.0d-8
+  mixing_beta  = 0.3
+  electron_maxstep = 200
+/
+&IONS
+  ion_dynamics = 'bfgs'
+/
+
+ATOMIC_SPECIES
+  H  1.00794  H.us.pbe.z_1.ld1.psl.v1.0.0-high.upf       !! MATCH THE SLABS
+
+CELL_PARAMETERS angstrom
+  15.0   0.0   0.0
+   0.0  15.0   0.0
+   0.0   0.0  15.0
+
+! H-H 0.742 A, centred in the box
+ATOMIC_POSITIONS angstrom
+  H   7.500000   7.500000   7.129000
+  H   7.500000   7.500000   7.871000
+
+K_POINTS gamma

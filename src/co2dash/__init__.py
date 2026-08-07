@@ -44,9 +44,13 @@ __all__ += ["fetch_catalysis_hub_reactions", "probe_schema", "raw_graphql", "sav
 
 # physics activity proxy (CHE limiting potential -> cell voltage target)
 from .proxy import (limiting_potential, build_activity_targets, proxy_cell_voltage,  # noqa: E402
-                    PATHWAYS, EQUILIBRIUM_POTENTIALS, TYPICAL_ZPE_TS_CORRECTIONS)
+                    PATHWAYS, EQUILIBRIUM_POTENTIALS, TYPICAL_ZPE_TS_CORRECTIONS,
+                    desorption_free_energy, equilibrium_coverage,
+                    limiting_analysis, DESORBING_STATE)
 __all__ += ["limiting_potential", "build_activity_targets", "proxy_cell_voltage",
-            "PATHWAYS", "EQUILIBRIUM_POTENTIALS", "TYPICAL_ZPE_TS_CORRECTIONS"]
+            "PATHWAYS", "EQUILIBRIUM_POTENTIALS", "TYPICAL_ZPE_TS_CORRECTIONS",
+            "desorption_free_energy", "equilibrium_coverage",
+            "limiting_analysis", "DESORBING_STATE"]
 
 # energy/grid: choose a country/region (sourced static profiles + live connectors)
 from .energy import (CountryProfile, COUNTRY_PROFILES, list_regions,         # noqa: E402
@@ -126,7 +130,7 @@ from .chain import (ChainProvenance, ChainResult, EnsemblePrediction,     # noqa
                     pds_uniform, applicability_report, SPREAD_ALARM_RATIO,
                     validate_pathway, PathwayValidation, PublishedBand,
                     HEA_CO2RR_BAND, check_against_published_band,
-                    DFT, ASSUMED)
+                    VASP_PBE_GAS_REFERENCE, VASP_PBE_CO_GAS, DFT, ASSUMED)
 __all__ += ["ChainProvenance", "ChainResult", "EnsemblePrediction",
             "IntermediateModel", "ReferenceFrame", "REFERENCE_MODES",
             "train_intermediate_models", "predict_composition",
@@ -134,4 +138,4 @@ __all__ += ["ChainProvenance", "ChainResult", "EnsemblePrediction",
             "pds_uniform", "applicability_report", "SPREAD_ALARM_RATIO",
             "validate_pathway", "PathwayValidation", "PublishedBand",
             "HEA_CO2RR_BAND", "check_against_published_band",
-            "DFT", "ASSUMED"]
+            "VASP_PBE_GAS_REFERENCE", "VASP_PBE_CO_GAS", "DFT", "ASSUMED"]

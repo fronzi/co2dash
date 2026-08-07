@@ -99,6 +99,31 @@ def test_validation_recovers_a_learnable_signal(sheets, frame):
     assert abs(v.u_l_bias) < 0.10
 
 
+def test_range_compression_is_measured_and_explained(sheets, frame):
+    """The slope of predicted-on-true U_L quantifies regression toward the mean.
+    On the real workbook it is ~0.62 for every model class tried, which is why
+    the note says the ceiling is the descriptor set rather than the regressor."""
+    v = validate_pathway(sheets, frame, "CO")
+    assert np.isfinite(v.u_l_slope) and v.u_l_slope > 0
+    assert f"{v.u_l_slope:.2f}" in v.summary()
+
+    faithful = PathwayValidation(
+        n=5, species=["CO"], e_ads_rmse={"CO": 0.1},
+        u_l_true=np.zeros(5), u_l_pred=np.zeros(5), u_l_rmse=0.0, u_l_bias=0.0,
+        u_l_rank_corr=1.0, u_l_slope=0.98, pds_agreement=1.0,
+        amplification={"CO": 1.0}, n_train_after_holdout={"CO": 10})
+    assert faithful.compression_note() is None
+
+    compressed = dc_replace(faithful, u_l_slope=0.62)
+    note = compressed.compression_note()
+    assert note is not None and "0.62" in note and "1.6x" in note
+
+
+def dc_replace(obj, **kw):
+    import dataclasses
+    return dataclasses.replace(obj, **kw)
+
+
 def test_amplification_is_reported_per_species(sheets, frame):
     v = validate_pathway(sheets, frame, "CO")
     for sp, amp in v.amplification.items():

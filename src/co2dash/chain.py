@@ -442,6 +442,7 @@ class PathwayValidation:
     u_l_rmse: float
     u_l_bias: float
     u_l_rank_corr: float
+    u_l_slope: float          # regression of predicted on true; < 1 = compressed
     pds_agreement: float
     amplification: Dict[str, float]      # U_L error / that species' E_ads error
     n_train_after_holdout: Dict[str, int]
@@ -450,8 +451,29 @@ class PathwayValidation:
         eads = ", ".join(f"*{k} {v:.3f}" for k, v in sorted(self.e_ads_rmse.items()))
         return (f"n={self.n} held-out configurations | E_ads RMSE (eV): {eads} | "
                 f"U_L RMSE {self.u_l_rmse:.3f} V, bias {self.u_l_bias:+.3f} V, "
-                f"rank corr {self.u_l_rank_corr:.3f}, PDS agreement "
-                f"{self.pds_agreement:.0%}")
+                f"slope {self.u_l_slope:.2f}, rank corr {self.u_l_rank_corr:.3f}, "
+                f"PDS agreement {self.pds_agreement:.0%}")
+
+    def compression_note(self) -> Optional[str]:
+        """Warning about range compression, or None if predictions are faithful.
+
+        A slope below 1 means predicted U_L spans a narrower range than the true
+        one, so good catalysts look worse than they are and bad ones look better.
+        This is regression toward the mean and is set by how much of the variance
+        the descriptors can explain -- on the published workbook every model class
+        tried (Bayesian linear, random forest, gradient boosting, GP with ARD)
+        gave slope 0.61-0.69 and RMSE ~0.10 eV. That agreement is the point: the
+        ceiling is the DESCRIPTOR SET, not the regressor, so switching model is
+        not the fix. Richer features (geometry, d-band centre, coordination) are.
+        """
+        if not np.isfinite(self.u_l_slope) or self.u_l_slope >= 0.9:
+            return None
+        return (f"Predicted U_L spans only {self.u_l_slope:.0%} of the true range "
+                f"(regression toward the mean). Divide by {self.u_l_slope:.2f} to "
+                f"de-attenuate a spread, but do NOT do so for a single prediction: "
+                f"it would inflate the error. Rankings are unaffected; the "
+                f"magnitude of any predicted difference is understated by about "
+                f"{1 / self.u_l_slope:.1f}x.")
 
 
 def validate_pathway(sheets: Dict[str, SheetData],
@@ -524,14 +546,15 @@ def validate_pathway(sheets: Dict[str, SheetData],
         rt = np.argsort(np.argsort(u_true))
         rp = np.argsort(np.argsort(u_pred))
         rank_corr = float(np.corrcoef(rt, rp)[0, 1])
+        slope = float(np.polyfit(u_true, u_pred, 1)[0])
     else:
-        rank_corr = float("nan")
+        rank_corr, slope = float("nan"), float("nan")
 
     return PathwayValidation(
         n=len(u_true), species=needed, e_ads_rmse=e_rmse,
         u_l_true=u_true, u_l_pred=u_pred, u_l_rmse=u_rmse,
         u_l_bias=float(np.mean(err)) if len(err) else float("nan"),
-        u_l_rank_corr=rank_corr,
+        u_l_rank_corr=rank_corr, u_l_slope=slope,
         pds_agreement=float(np.mean([a == b for a, b in zip(pds_true, pds_pred)]))
         if pds_true else float("nan"),
         amplification={sp: (u_rmse / e_rmse[sp]) if e_rmse[sp] > 1e-12 else float("inf")

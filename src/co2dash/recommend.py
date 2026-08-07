@@ -29,7 +29,12 @@ _LEVERS = {
 }
 _LABEL = {"faradaic_efficiency": "faradaic efficiency", "cell_voltage": "cell voltage (V)",
           "grid_intensity": "grid intensity (kgCO₂/kWh)", "c_elec": "electricity price ($/kWh)",
-          "capex_total": "CAPEX ($)"}
+          "capex_total": "CAPEX ($)",
+          # uncertain inputs that are NOT controllable levers: they can dominate
+          # the variance (and so be worth measuring) without being engineerable
+          "lcop_conventional": "conventional product price ($/kg)",
+          "c_co2": "CO₂ feedstock cost ($/kg)",
+          "c_h2": "H₂ cost ($/kg)"}
 
 
 @dataclass

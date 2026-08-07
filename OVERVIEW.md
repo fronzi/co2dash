@@ -79,11 +79,19 @@ range, putting the true best configuration 3rd.
   richer features (d-band centre, coordination, strain) would.
 - **Absolute U_L needs your own gas-phase reference energies.** DFT total
   energies are not portable between setups, and the source paper's published
-  0.29–0.51 V band cannot serve as an anchor — the computed spread is 3.8× the
-  band width, a disagreement no shift can fix (`check_against_published_band`).
+  0.29–0.51 V band cannot serve as an anchor — even with correct shifts the
+  computed spread is 2.26× the band width, a disagreement no shift can fix
+  (`check_against_published_band`).
 - **Anchored mode is under-determined** unless the first PCET step limits: one
   anchor fixes one species' shift, and the second step needs the difference of
-  two. Checked and warned at run time.
+  two. Checked and warned at run time. Use `absolute` — with real references the
+  PDS *does* vary (COOH→CO ×16, CO2→COOH ×5), which one anchor cannot represent.
+- **Activity is not the only limit.** On all 21 sampled configurations every
+  proton-coupled step is downhill (U_L > 0) and the surface is CO-poisoned
+  instead (ΔG_des 1.77–2.19 eV, coverage 1.0000). Desorption transfers no
+  electrons, so no cell voltage is derived in that regime — applied potential
+  cannot remove a bound product. An apparently perfect CHE ladder means a
+  poisoned surface, not a good catalyst.
 - **Applicability gaps are real**: the \*CO sheet has no Cu-terminated sites, so
   Cu-bearing compositions extrapolate there — biasing ΔE(\*CO) by 0.32 eV on
   equimolar FeCoNiCuMo. The surrogate's own sigma does not detect this; the

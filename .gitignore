@@ -24,6 +24,3 @@ docs/*.pdf
 .claude/
 check.py
 check.py
-examples/gas_reference_qe/*.out
-examples/gas_reference_qe/tmp/
-examples/gas_reference_qe/pseudo/

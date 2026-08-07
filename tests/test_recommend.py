@@ -43,11 +43,14 @@ def test_closing_note_is_derived_not_asserted():
         if r.top_uncertainty is None:
             assert "no claim is made" in last
         else:
-            # it must name the input the analysis actually found
-            label = {"faradaic_efficiency": "aradaic", "cell_voltage": "ell voltage",
-                     "grid_intensity": "rid intensity", "c_elec": "lectricity price",
-                     "capex_total": "APEX"}[r.top_uncertainty]
-            assert label in last
+            # it must name the input the analysis actually found, using the
+            # module's own label map -- so a newly uncertain input cannot be
+            # reported under a raw field name without this test noticing
+            from co2dash.recommend import _LABEL
+            assert r.top_uncertainty in _LABEL, (
+                f"{r.top_uncertainty!r} has no human-readable label")
+            label = _LABEL[r.top_uncertainty]
+            assert label[1:] in last          # skip the first char: it may be capitalised
 
 
 def test_sobol_ranges_come_from_the_mc_distributions():

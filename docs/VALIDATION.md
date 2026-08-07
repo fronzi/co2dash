@@ -187,6 +187,17 @@ limiting-potential target, or uses a U_L column if present). Run:
 nothing is hardcoded to a guessed schema. The largest clean descriptor→property calibration to
 date remains the CHEAT DFT run (≈2500 pts) documented above.
 
+## Discovery→decision chain
+
+The descriptor→activity→economics chain has its own validation document:
+[`CHAIN_VALIDATION.md`](CHAIN_VALIDATION.md). It records the held-out test on the
+21 FeCoNiCuMo configurations that carry both \*CO and \*COOH (U_L RMSE 0.102 V,
+no amplification through `max()`, predicted-on-true slope 0.62), the model-class
+comparison establishing that the **descriptor set rather than the regressor** is
+the accuracy ceiling, the applicability gap (no Cu-terminated \*CO sites), and
+why the source paper's published 0.29–0.51 V band **cannot** be used as a
+reference anchor.
+
 ## Status and next validation steps
 
 - [x] Physics engine reproduced against Jouny 2018 (machine precision).
@@ -196,6 +207,18 @@ date remains the CHEAT DFT run (≈2500 pts) documented above.
       AND real experimental FE (Scientific Data 2023 corpus).
 - [x] Descriptor↔FE join machinery built; join gap quantified on real data
       (30% public / 45% bespoke / 25% ill-defined) with a descriptor-request list.
+- [x] Discovery→decision chain validated end-to-end on held-out DFT
+      (`CHAIN_VALIDATION.md`): U_L RMSE 0.102 V, PDS agreement 100%, no error
+      amplification through the `max()` over PCET steps.
+- [x] Accuracy ceiling attributed to the descriptor set, not the regressor
+      (four model classes agree to 0.007 eV RMSE and 0.08 in slope).
+- [ ] **Obtain E(CO₂), E(H₂), E(H₂O) at the workbook's level of theory.** This
+      is the single blocker on quotable absolute U_L and MAC; the published
+      activity band cannot substitute (width ratio 3.8×, no shift reconciles it).
+- [ ] Confirm the published E_ads convention: E(\*X)−E(\*)−E_gas(X) or
+      E(\*X)−E(\*)? It shifts a whole species rigidly.
+- [ ] Compute ~15–20 Cu-terminated \*CO configurations to close the
+      applicability gap that currently biases every Cu-bearing composition.
 - [ ] Obtain the 'public' Cu-facet descriptors (Catalysis-Hub) + 'bespoke' DFT
       for the ranked surfaces, complete the descriptor→FE dataset, and train the
       production surrogate (KAN/BNN) through the calibration gate into the MAC loop.

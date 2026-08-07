@@ -52,6 +52,74 @@ REFERENCE_MODES = ("relative", "anchored", "absolute")
 
 
 # ---------------------------------------------------------------------------
+# published activity band for this system -- a consistency check, NOT an anchor
+# ---------------------------------------------------------------------------
+@dataclass(frozen=True)
+class PublishedBand:
+    """A limiting-potential range reported in the literature for a system."""
+    system: str
+    u_l_min_abs: float          # |U_L| lower edge, V
+    u_l_max_abs: float          # |U_L| upper edge, V
+    citation: str
+    doi: str
+    note: str = ""
+
+    @property
+    def width(self) -> float:
+        return self.u_l_max_abs - self.u_l_min_abs
+
+
+# The workbook's own paper. Reported |U_L| = 0.29-0.51 V for the designed
+# FeCoNiCuMo surface. Tempting as an anchor -- same system, same level of theory
+# -- but see check_against_published_band(): the |U_L| spread implied by the
+# supplementary adsorption energies is several times wider than this band, and
+# the discrepancy is INDEPENDENT of any shift, so no anchor choice reconciles
+# them. Kept as a falsification test rather than a calibration source.
+HEA_CO2RR_BAND = PublishedBand(
+    system="FeCoNiCuMo HEA, CO2RR to CO",
+    u_l_min_abs=0.29, u_l_max_abs=0.51,
+    citation="Chen et al., ACS Catal. 12, 14864-14871 (2022)",
+    doi="10.1021/acscatal.2c03675",
+    note="Value taken from the abstract; whether it covers all sampled sites or "
+         "only the designed surface is not established from the abstract alone.")
+
+
+def check_against_published_band(u_l: Sequence[float],
+                                 band: PublishedBand = HEA_CO2RR_BAND) -> Dict:
+    """Compare a set of computed limiting potentials with a published band.
+
+    Reports the fraction inside the band AND -- the decisive quantity -- the
+    ratio of widths. The reference shift is a constant, so it moves the whole
+    distribution without changing its width: if the computed spread is much
+    wider than the published one, the two cannot be reconciled by ANY anchor,
+    and the disagreement is about the model or the data selection rather than
+    the reference frame.
+    """
+    u = np.abs(np.asarray(list(u_l), float))
+    u = u[np.isfinite(u)]
+    if u.size == 0:
+        raise ValueError("no finite limiting potentials to compare")
+    width = float(u.max() - u.min())
+    ratio = width / band.width if band.width > 0 else float("inf")
+    inside = float(np.mean((u >= band.u_l_min_abs) & (u <= band.u_l_max_abs)))
+    reconcilable = ratio <= 1.5
+    return {
+        "band": f"{band.u_l_min_abs}-{band.u_l_max_abs} V ({band.citation})",
+        "computed_width": width, "band_width": band.width,
+        "width_ratio": ratio, "fraction_inside": inside,
+        "shift_can_reconcile": reconcilable,
+        "reason": "" if reconcilable else (
+            f"the computed |U_L| spread is {ratio:.1f}x the published band. A "
+            f"reference shift translates the distribution without narrowing it, "
+            f"so no anchor can bring these into agreement. Likely causes: the "
+            f"published band describes selected surfaces rather than the full "
+            f"sampled set, or the potential-determining step varies between "
+            f"configurations so U_L is not a single linear function of one "
+            f"adsorption energy."),
+    }
+
+
+# ---------------------------------------------------------------------------
 # provenance: every Scenario field says where it came from
 # ---------------------------------------------------------------------------
 DFT = "DFT-derived"
@@ -257,11 +325,22 @@ class ReferenceFrame:
 
 
 def _anchor_shift(frame: ReferenceFrame, product: str) -> float:
-    """Solve the single constant that makes the anchor reproduce its known U_L.
+    """Solve the constant that makes the anchor reproduce its known U_L.
 
-    Valid while the potential-determining step is the first PCET (CO2->X), which
-    holds across the plausible shift range for the CO pathway; `apply_reference`
-    re-checks the PDS after shifting and flags if it moved.
+    IMPORTANT LIMITATION. Each species has its OWN reference shift -- see
+    hea.che_reference_shift, where shift(*CO) and shift(*COOH) differ because the
+    balanced half-reactions differ. A single anchor determines only ONE of them.
+
+    This function therefore applies the anchored species' shift to every species,
+    which is correct ONLY while the potential-determining step is the first PCET
+    (CO2 -> X), because then U_L = -(E_ads(X) + shift(X)) and no other shift
+    enters. If the second step limits, its free energy depends on the DIFFERENCE
+    of two independent shifts, which one anchor cannot supply -- and the result
+    would be wrong without being obviously so. `run_chain` checks the resulting
+    PDS and flags this; `validate_pathway` inherits the same caveat.
+
+    Use mode='absolute' with your own gas-phase energies whenever the PDS is not
+    reliably the first step.
     """
     first_product = PATHWAYS[product][0][1]
     e = frame.anchor_energies.get(first_product)
@@ -392,6 +471,18 @@ def run_chain(comp: Composition,
     res.U_L, res.overpotential, res.pds = lp["U_L"], lp["overpotential"], lp["pds"]
     res.v_cell, res.v_cell_sd = v, float(sd)
     prov.origins["cell_voltage"] = DFT
+
+    # a single anchor determines only the anchored species' reference shift, so
+    # it is only sufficient while the FIRST PCET step limits (see _anchor_shift)
+    first_step = f"CO2->{PATHWAYS[product][0][1]}"
+    if frame.mode == "anchored" and lp["pds"] != first_step:
+        res.warnings.append(
+            f"the potential-determining step here is {lp['pds']}, not {first_step}. "
+            f"A single anchor fixes only one species' reference shift, and the "
+            f"second step depends on the difference of two independent shifts — "
+            f"so this U_L is not determined by the anchor. Use mode='absolute' "
+            f"with your own gas-phase energies.")
+        prov.notes.append("anchored mode is under-determined for this configuration")
 
     # a voltage derived from an extrapolating intermediate must say so, loudly:
     # it propagates straight into the headline MAC

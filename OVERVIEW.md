@@ -46,13 +46,52 @@ experimental FE  ------------------------------------------->|
   illustrative). Large clean run (Chen HEA / ACS Catalysis) drops into the same
   pipeline via `loaders` on a network that reaches Figshare.
 
+## The composition→MAC chain (`composition`, `chain`)
+
+Enter an alloy composition, not 40 descriptor columns: the descriptors are
+element properties, so they are derived from a lookup table. A composition
+specifies a *distribution* over site occupations, so predictions are ensembles —
+configurational and model uncertainty are reported separately.
+
+```
+composition -> sampled site occupations -> descriptors -> E_ads (+/- sigma)
+            -> reference frame -> U_L -> V_cell -> Scenario -> MAC
+```
+
+Every performance field records its origin (`ChainProvenance`), and the verdict
+strip states which KPIs are DFT-driven and which are assumed. Faradaic
+efficiency is **never** derived.
+
+Measured behaviour, limitations, and the negative results are in
+[`docs/CHAIN_VALIDATION.md`](docs/CHAIN_VALIDATION.md). Headline numbers on the
+21 held-out FeCoNiCuMo configurations: U_L RMSE 0.102 V, no error amplification
+through `max()`, but predicted-on-true slope 0.62 — the surrogate compresses the
+range, putting the true best configuration 3rd.
+
 ## Honest limitations
 
 - Descriptor→**FE** (selectivity) is scientifically harder than descriptor→
   **activity**; treat →FE as aspirational until same-source data supports it.
+  The chain never derives FE — it is carried through and labelled assumed.
+- **The descriptor set, not the regressor, is the accuracy ceiling.** Bayesian
+  linear, random forest, gradient boosting and a GP with ARD all give U_L RMSE
+  ~0.10 eV and slope 0.61–0.69 on the same hold-out. More ML buys nothing;
+  richer features (d-band centre, coordination, strain) would.
+- **Absolute U_L needs your own gas-phase reference energies.** DFT total
+  energies are not portable between setups, and the source paper's published
+  0.29–0.51 V band cannot serve as an anchor — the computed spread is 3.8× the
+  band width, a disagreement no shift can fix (`check_against_published_band`).
+- **Anchored mode is under-determined** unless the first PCET step limits: one
+  anchor fixes one species' shift, and the second step needs the difference of
+  two. Checked and warned at run time.
+- **Applicability gaps are real**: the \*CO sheet has no Cu-terminated sites, so
+  Cu-bearing compositions extrapolate there — biasing ΔE(\*CO) by 0.32 eV on
+  equimolar FeCoNiCuMo. The surrogate's own sigma does not detect this; the
+  site-coverage guard does.
 - The corpus↔public-DFT join is partial (~30% public / 45% bespoke / 25% ill-
   defined) — a real material-space bottleneck, quantified, not hidden.
-- CAPEX dominates MAC uncertainty; it is an ESTIMATED input, not predicted.
+- CAPEX is an ESTIMATED input, not predicted. Which input dominates MAC
+  uncertainty is now *computed* per scenario, not asserted.
 - Live web connectors run on your machine (network), not in the build sandbox.
 - Low-quality data → the tool widens uncertainty and warns; it never fabricates.
 
@@ -71,6 +110,13 @@ python examples/descriptor_activity_public.py       # descriptor->activity, publ
 python examples/load_figshare_dataset.py <file>     # Chen HEA / ACS Catalysis -> activity
 python examples/build_descriptor_fe_dataset.py <xls> [descriptors.json]  # the join
 python examples/run_pipeline.py <data.csv>          # end-to-end with data-quality gate
+```
+
+```python
+# composition -> MAC, and the hold-out validation behind it
+from co2dash.hea import load_workbook
+from co2dash.chain import (train_intermediate_models, run_chain, ReferenceFrame,
+                           validate_pathway, applicability_report)
 ```
 
 ## Deployment

@@ -124,6 +124,41 @@ def dc_replace(obj, **kw):
     return dataclasses.replace(obj, **kw)
 
 
+# ------------------------------------------------- published-band consistency
+def test_a_narrow_distribution_inside_the_band_is_reconcilable():
+    from co2dash.chain import HEA_CO2RR_BAND, check_against_published_band
+    r = check_against_published_band([-0.31, -0.38, -0.45, -0.49])
+    assert r["shift_can_reconcile"] is True
+    assert r["fraction_inside"] == 1.0
+    assert r["width_ratio"] < 1.5
+    assert HEA_CO2RR_BAND.doi == "10.1021/acscatal.2c03675"
+
+
+def test_a_distribution_far_wider_than_the_band_cannot_be_anchored():
+    """The decisive check: a shift translates the distribution but does not
+    narrow it, so a much wider computed spread rules out every anchor."""
+    from co2dash.chain import check_against_published_band
+    wide = np.linspace(-1.10, -0.27, 21)
+    r = check_against_published_band(wide)
+    assert r["shift_can_reconcile"] is False
+    assert r["width_ratio"] > 3
+    assert "no anchor" in r["reason"]
+
+
+def test_band_comparison_uses_magnitudes_so_sign_convention_does_not_matter():
+    from co2dash.chain import check_against_published_band
+    a = check_against_published_band([-0.31, -0.45])
+    b = check_against_published_band([0.31, 0.45])
+    assert a["computed_width"] == pytest.approx(b["computed_width"])
+    assert a["fraction_inside"] == b["fraction_inside"]
+
+
+def test_band_comparison_refuses_an_empty_sample():
+    from co2dash.chain import check_against_published_band
+    with pytest.raises(ValueError, match="no finite"):
+        check_against_published_band([np.inf, np.nan])
+
+
 def test_amplification_is_reported_per_species(sheets, frame):
     v = validate_pathway(sheets, frame, "CO")
     for sp, amp in v.amplification.items():

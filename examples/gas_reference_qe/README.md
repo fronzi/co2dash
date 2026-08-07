@@ -1,5 +1,35 @@
 # Gas-phase reference energies for the CHE reference frame (Quantum ESPRESSO)
 
+> **These QE outputs are NOT the numbers the code uses.**
+>
+> `co2dash.chain.VASP_PBE_GAS_REFERENCE` holds **VASP PAW-PBE** values, because
+> the HEA slab calculations were run in VASP and reference energies are only
+> valid within one setup:
+>
+> | | CO2 | H2 | H2O | CO |
+> |---|---|---|---|---|
+> | this directory (QE) | -1290.157 | -31.745 | -599.197 | -721.908 |
+> | used by the code (VASP) | -22.95 | -6.77 | -14.22 | -14.80 |
+>
+> The two disagree by ~1200 eV per species and **both are correct** — a total
+> energy is defined only relative to its own pseudopotential set, so the values
+> are not comparable and neither is "wrong". What *is* comparable is the
+> reaction energy, and the two agree there to 0.1 eV:
+>
+> | | CO2 + H2 -> CO + H2O |
+> |---|---|
+> | QE (this directory) | +0.798 eV |
+> | VASP (used by the code) | +0.700 eV |
+> | experiment (RWGS, 298 K) | +0.427 eV |
+>
+> Both overshoot experiment by 0.27-0.37 eV, the documented GGA CO2 overbinding
+> ("OCO backbone") error. That the two independent setups land so close to each
+> other is a useful cross-check on both.
+>
+> So: this directory is kept as an **independent verification** and as a worked
+> template. Do not paste its numbers into `mode='absolute'` unless your slabs
+> were run in Quantum ESPRESSO with exactly these settings.
+
 Three single-molecule calculations producing `E(CO2)`, `E(H2)`, `E(H2O)` — the
 inputs `co2dash.chain.ReferenceFrame(mode="absolute")` needs to convert the
 workbook's adsorption energies into CHE formation free energies.

@@ -495,9 +495,6 @@ with t6:
                "voltage (V or mV), current density, electricity price, grid "
                "intensity. Unmeasured inputs are filled from your loaded scenario "
                "or from sourced defaults, and flagged. One row = one catalyst.")
-    default_rxn = st.selectbox("Default product (used when a row has no 'product' column)",
-                               ["co", "methanol", "formate"], key="ud_rxn")
-
     if ud_csv is None:
         st.info("Upload a **measurements .csv** in the sidebar (input 2) to use "
                 "this tab.")
@@ -514,6 +511,23 @@ with t6:
         st.markdown(f"**Recognised columns:** {', '.join(f'`{k}`→{v}' for k, v in mapping.items()) or '—'}")
         if unknown:
             st.caption(f"Ignored (not used): {', '.join(unknown)}")
+
+        # The product fixes the stoichiometry (n, molar mass, kg CO2 per kg), so
+        # it changes everything downstream. Only ask when the file does not say:
+        # shown unconditionally it was inert for most files and quietly decisive
+        # for the rest.
+        if "product" in mapping.values():
+            default_rxn = "co"          # unused: every row carries its own
+            st.caption("Product read from your `product` column — the "
+                       "stoichiometry comes from the file, not from a default.")
+        else:
+            st.warning(
+                "Your file has no `product` column, so the reaction must be "
+                "assumed — and it sets n, molar mass and kg CO₂ per kg. On an "
+                "otherwise identical row this choice moves MAC from +954 (CO) to "
+                "−343 $/t (formate). Add a `product` column to remove the guess.")
+            default_rxn = st.selectbox("Assume this product for every row",
+                                       ["co", "methanol", "formate"], key="ud_rxn")
 
         # pass the loaded scenario as the fill source: the CSV supplies what it
         # measured, the YAML supplies the plant and the grid. Without this the

@@ -74,7 +74,14 @@ RX = {"Methanol (6e⁻)": RXN_METHANOL, "Formate (2e⁻)": RXN_FORMATE, "CO (2e�
 # --------------------------------------------------------------------- sidebar
 with st.sidebar:
     st.markdown("### Scenario levers")
-    rxn = RX[st.selectbox("Product", list(RX))]
+    st.caption("Your hypotheses. A loaded YAML replaces all of these.")
+    # NOTE: this offers "CO (2e-)" while the DFT section below offers "*CO".
+    # They are different objects -- a product MOLECULE leaving the cell versus a
+    # species ADSORBED on the surface -- so both carry the qualifier that makes
+    # that unmistakable rather than a bare "CO".
+    rxn = RX[st.selectbox("Product molecule (what the cell makes)", list(RX),
+                          help="Sets the stoichiometry: electrons transferred, "
+                               "molar mass, kg CO₂ consumed per kg of product.")]
     fe = st.slider("Faradaic efficiency", 0.05, 1.0, 0.60, 0.01,
                    help="Fraction of electrons going to the target product. Enters energy as 1/FE.")
     vcell = st.slider("Cell voltage (V)", 1.5, 5.0, 3.0, 0.1)
@@ -122,11 +129,13 @@ with st.sidebar:
                "row a site configuration plus its adsorption energy. Drives: "
                "Predict from composition, Next DFT to run, Model reliability.")
     _dft_int = st.selectbox(
-        "Intermediate — for 'Next DFT to run' & 'Model reliability' only",
-        ["CO", "CHO", "COOH"], key="dft_int",
-        help="Those two tabs study one intermediate at a time, so they need you "
-             "to pick which. 'Predict from composition' ignores it: the limiting "
-             "potential needs *CO and *COOH together, so it loads every sheet.")
+        "Adsorbed intermediate — for 'Next DFT to run' & 'Model reliability' only",
+        ["CO", "CHO", "COOH"], key="dft_int", format_func=lambda s: f"*{s}",
+        help="A species bound to the surface — not the product molecule chosen "
+             "above. *CO is CO adsorbed on the catalyst; CO the product is what "
+             "leaves the cell. Those two tabs study one intermediate at a time. "
+             "'Predict from composition' ignores this: the limiting potential "
+             "needs *CO and *COOH together, so it loads every sheet.")
 
 def slider_scenario():
     return Scenario(
@@ -143,7 +152,8 @@ if uploaded is not None:
     with tempfile.NamedTemporaryFile(suffix=".yaml", delete=False, mode="wb") as fh:
         fh.write(uploaded.getvalue()); tmp = fh.name
     base, registry = load_scenario(tmp)
-    st.sidebar.success("Loaded from YAML (overrides sliders).")
+    st.sidebar.success("Scenario loaded from YAML — every slider above, "
+                       "including the product, is now inactive.")
 else:
     base = slider_scenario()
 

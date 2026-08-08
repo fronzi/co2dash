@@ -48,6 +48,12 @@ COLUMN_ALIASES: Dict[str, List[str]] = {
 
 _HEADER_LOOKUP = {alias: canon for canon, al in COLUMN_ALIASES.items() for alias in al}
 
+# Fields that describe the PLANT or the SITE rather than the catalyst. A CSV may
+# legitimately carry them, but when they contradict a loaded scenario the result
+# is a hybrid, so the clash is reported rather than resolved silently.
+_CONTEXT_FIELDS = {"c_elec", "grid_intensity", "c_co2", "capex_total",
+                   "lcop_conventional", "release_fraction"}
+
 REACTION_ALIASES: Dict[str, Reaction] = {
     "co": RXN_CO, "carbon monoxide": RXN_CO,
     "methanol": RXN_METHANOL, "ch3oh": RXN_METHANOL, "meoh": RXN_METHANOL,
@@ -186,6 +192,19 @@ def row_to_scenario(row: Dict[str, object], default_reaction: str = "co",
                     f"{f}={v:g} outside plausible range [{lo:g}, {hi:g}]")
             vals[f] = v
             provenance[f] = "user"
+            # A CSV column silently beating a declared scenario is fine for the
+            # catalyst's own KPIs, but c_elec / grid_intensity / capex and the
+            # like describe the PLANT and the SITE, not the material. Overriding
+            # those without saying so produces a hybrid that matches neither the
+            # scenario on screen nor anything the user intended.
+            if base is not None and hasattr(base, f):
+                b = float(getattr(base, f))
+                if not math.isclose(b, v, rel_tol=1e-9, abs_tol=1e-12):
+                    tag = ("context, not a catalyst property"
+                           if f in _CONTEXT_FIELDS else "measurement")
+                    warnings.append(
+                        f"{f}: your CSV column ({v:g}) overrides the loaded "
+                        f"scenario ({b:g}) — {tag}")
 
     # fields the engine needs; fill from defaults where the user didn't give them
     needed = ["faradaic_efficiency", "cell_voltage", "capex_total",

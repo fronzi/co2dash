@@ -48,6 +48,35 @@ def test_provenance_names_the_scenario_as_the_source():
     assert r2.provenance["grid_intensity"].startswith("default:")
 
 
+def test_csv_columns_that_contradict_the_scenario_are_reported():
+    """A CSV column beating a declared scenario is fine for the catalyst's own
+    KPIs, but electricity price and grid intensity describe the plant and the
+    site. Overriding those silently yields a hybrid matching nothing."""
+    base = _loaded_scenario()          # c_elec 0.03, grid 0.02
+    csv = ("material,product,FE (%),cell voltage,electricity price,grid intensity\n"
+           "Ag-foam,CO,92,3.2,0.04,0.05\n")
+    r = ingest_table(csv, "co", base=base)[0]
+    joined = " | ".join(r.warnings)
+    assert "c_elec" in joined and "context, not a catalyst property" in joined
+    assert "grid_intensity" in joined
+    # a genuine measurement is flagged too, but labelled differently
+    assert "cell_voltage" in joined and "— measurement" in joined
+
+
+def test_no_clash_warning_when_the_csv_agrees_with_the_scenario():
+    base = _loaded_scenario()
+    csv = (f"material,product,FE (%),cell voltage,grid intensity\n"
+           f"X,CO,95,2.2,{base.grid_intensity}\n")
+    r = ingest_table(csv, "co", base=base)[0]
+    assert not any("overrides the loaded scenario" in w for w in r.warnings)
+
+
+def test_no_clash_warning_without_a_loaded_scenario():
+    csv = "material,product,FE (%),cell voltage,grid intensity\nX,CO,92,3.2,0.05\n"
+    r = ingest_table(csv, "co")[0]
+    assert not any("overrides" in w for w in r.warnings)
+
+
 def test_behaviour_without_a_base_is_unchanged():
     a = ingest_table(_CSV, "co")[0].scenario
     b = ingest_table(_CSV, "co", base=None)[0].scenario

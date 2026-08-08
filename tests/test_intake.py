@@ -77,6 +77,55 @@ def test_no_clash_warning_without_a_loaded_scenario():
     assert not any("overrides" in w for w in r.warnings)
 
 
+def test_current_density_now_drives_the_capital():
+    """Regression: current_density was parsed, range-checked and then dropped —
+    Scenario had no such field. It decides how much electrode you must buy, so a
+    fast cell and a slow one cannot cost the same."""
+    csv = ("material,product,FE (%),cell voltage,current density\n"
+           "fast,CO,90,3.0,600\nslow,CO,90,3.0,100\n")
+    fast, slow = ingest_table(csv, "co")
+    assert fast.scenario.capex_total < slow.scenario.capex_total
+    # area, and therefore capital, scales as 1/j
+    assert slow.scenario.capex_total / fast.scenario.capex_total == pytest.approx(6.0, rel=0.02)
+    assert fast.provenance["capex_total"].startswith("from current density")
+    assert "electrode_area_m2" in fast.provenance
+
+
+def test_area_method_matches_the_validated_jouny_reference():
+    from co2dash.techno_economic import electrode_area_m2
+    from co2dash.validation import PRODUCTS, ref_electrolyzer_area_and_capex
+    p = PRODUCTS["co"]
+    ref, _ = ref_electrolyzer_area_and_capex(100, p.n, p.molar_mass, 0.90, 200, 2830.0)
+    got = electrode_area_m2(100 * 1000 * 365, p.n, p.molar_mass, 0.90, 200,
+                            operating_days_per_year=365)
+    assert got == pytest.approx(ref, rel=1e-12)
+
+
+def test_user_capex_is_kept_but_a_disagreement_is_reported():
+    csv = ("material,product,FE (%),cell voltage,current density,capex\n"
+           "X,CO,90,3.0,600,90000000\n")
+    r = ingest_table(csv, "co")[0]
+    assert r.scenario.capex_total == pytest.approx(9.0e7)      # theirs wins
+    assert any("disagree" in w and "area method" in w for w in r.warnings)
+
+
+def test_consistent_capex_and_current_density_raise_no_complaint():
+    from co2dash.techno_economic import capex_from_current_density
+    from co2dash.schema import RXN_CO
+    cap = capex_from_current_density(2.0e7, RXN_CO.n_electrons,
+                                     RXN_CO.molar_mass_prod, 0.90, 300)
+    csv = ("material,product,FE (%),cell voltage,current density,capex\n"
+           f"X,CO,90,3.0,300,{cap['total_capex_usd']:.0f}\n")
+    r = ingest_table(csv, "co")[0]
+    assert not any("disagree" in w for w in r.warnings)
+
+
+def test_without_current_density_the_capital_is_untouched():
+    csv = "material,product,FE (%),cell voltage\nX,CO,90,3.0\n"
+    r = ingest_table(csv, "co")[0]
+    assert r.provenance["capex_total"].startswith("default:")
+
+
 def test_behaviour_without_a_base_is_unchanged():
     a = ingest_table(_CSV, "co")[0].scenario
     b = ingest_table(_CSV, "co", base=None)[0].scenario

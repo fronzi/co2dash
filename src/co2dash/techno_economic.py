@@ -60,6 +60,61 @@ def lcop(capex_total: float,
 
 
 # ---------------------------------------------------------------------------
+# Current density -> electrode area -> capital
+# ---------------------------------------------------------------------------
+# Jouny, Luc & Jiao (2018) area-cost method. Defaults are that paper's base
+# case; validation.py reproduces its area and stack capital independently, so
+# these are cross-checked rather than asserted.
+JOUNY_STACK_COST_PER_M2 = 2830.0      # $/m2 of electrode, base case
+JOUNY_BOP_MULTIPLE = 3.0              # total plant capital / stack capital
+
+
+def electrode_area_m2(annual_production_kg: float,
+                      n_electrons: float,
+                      molar_mass_prod: float,
+                      faradaic_efficiency: float,
+                      current_density_mA_cm2: float,
+                      operating_days_per_year: float = 350.0) -> float:
+    """Electrode area needed to sustain a production rate.
+
+        I = n F (mdot / M) / FE          area = I / j
+
+    Current density is the variable that decides how much electrode you must
+    buy: doubling j halves the area and therefore the stack capital. A cell that
+    is efficient but slow can be more expensive than a mediocre fast one, which
+    is exactly the trade a descriptor-only view cannot see.
+    """
+    fe = np.clip(faradaic_efficiency, 1e-3, 1.0)
+    j = np.maximum(current_density_mA_cm2, 1e-9) * 10.0        # mA/cm2 -> A/m2
+    mdot = annual_production_kg / (operating_days_per_year * 86400.0)   # kg/s
+    current = n_electrons * F * (mdot / molar_mass_prod) / fe           # A
+    return current / j
+
+
+def capex_from_current_density(annual_production_kg: float,
+                               n_electrons: float,
+                               molar_mass_prod: float,
+                               faradaic_efficiency: float,
+                               current_density_mA_cm2: float,
+                               cost_per_m2: float = JOUNY_STACK_COST_PER_M2,
+                               bop_multiple: float = JOUNY_BOP_MULTIPLE,
+                               operating_days_per_year: float = 350.0) -> dict:
+    """Electrode area, stack capital and total plant capital.
+
+    `bop_multiple` (separations + balance of plant, relative to the stack) is
+    the dominant uncertain lever here, not the electrode cost: separations
+    dominate CCU capital. Treat the total as an order of magnitude.
+    """
+    area = electrode_area_m2(annual_production_kg, n_electrons, molar_mass_prod,
+                             faradaic_efficiency, current_density_mA_cm2,
+                             operating_days_per_year)
+    stack = area * cost_per_m2
+    return {"area_m2": float(area), "stack_capex_usd": float(stack),
+            "total_capex_usd": float(stack * bop_multiple),
+            "cost_per_m2": float(cost_per_m2), "bop_multiple": float(bop_multiple)}
+
+
+# ---------------------------------------------------------------------------
 # Life-cycle / climate accounting
 # ---------------------------------------------------------------------------
 def net_abatement_kg_per_kg(m_co2: float,

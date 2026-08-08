@@ -12,7 +12,8 @@ Architecture (data flows top to bottom, decisions flow back up):
 from .schema import (Quantity, DataTier, Reaction, Candidate,
                      REACTIONS, RXN_METHANOL, RXN_FORMATE, RXN_CO)
 from .techno_economic import (Scenario, evaluate_array,
-                              marginal_abatement_cost_array)
+                              marginal_abatement_cost_array,
+                              electrode_area_m2, capex_from_current_density)
 from .surrogate import BayesianLinearSurrogate, cv_noise_precision
 from .uncertainty import propagate_mc, sobol_indices
 from .active_learning import rank_candidates
@@ -23,6 +24,7 @@ from .calibration import (coverage_report, miscalibration_area,
 __all__ = ["Quantity", "DataTier", "Reaction", "Candidate", "REACTIONS",
            "RXN_METHANOL", "RXN_FORMATE", "RXN_CO", "Scenario",
            "evaluate_array", "marginal_abatement_cost_array",
+           "electrode_area_m2", "capex_from_current_density",
            "BayesianLinearSurrogate", "cv_noise_precision",
            "propagate_mc", "sobol_indices",
            "rank_candidates", "load_scenario", "ProvenanceRegistry",

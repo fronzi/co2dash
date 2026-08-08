@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
 from .schema import Reaction, RXN_CO, RXN_METHANOL, RXN_FORMATE
-from .techno_economic import Scenario
+from .techno_economic import Scenario, capex_from_current_density
 from .defaults import defaults_for
 
 # ------------------------------------------------------------------ aliases
@@ -224,6 +224,29 @@ def row_to_scenario(row: Dict[str, object], default_reaction: str = "co",
             continue
         vals[f] = q.value
         provenance[f] = f"default: {q.source}"
+
+    # Current density decides how much electrode you must buy, so it belongs in
+    # the capital, not just in the metadata. It used to be parsed, validated and
+    # then dropped -- a user supplying it reasonably expected it to matter.
+    if "current_density" in vals and vals["current_density"] > 0:
+        cap = capex_from_current_density(
+            vals["annual_production_kg"], rxn.n_electrons, rxn.molar_mass_prod,
+            vals["faradaic_efficiency"], vals["current_density"])
+        if provenance.get("capex_total") == "user":
+            ratio = cap["total_capex_usd"] / max(vals["capex_total"], 1.0)
+            if ratio > 2.0 or ratio < 0.5:
+                warnings.append(
+                    f"your CAPEX ({vals['capex_total']:.3g} $) and your current "
+                    f"density ({vals['current_density']:g} mA/cm²) disagree: the "
+                    f"area method implies {cap['total_capex_usd']:.3g} $ "
+                    f"({cap['area_m2']:.0f} m² of electrode). Yours is kept.")
+        else:
+            vals["capex_total"] = cap["total_capex_usd"]
+            provenance["capex_total"] = (
+                f"from current density: {cap['area_m2']:.0f} m² × "
+                f"{cap['cost_per_m2']:.0f} $/m² × {cap['bop_multiple']:g} "
+                f"(Jouny 2018 area method)")
+            provenance["electrode_area_m2"] = f"{cap['area_m2']:.0f}"
 
     if "faradaic_efficiency" not in provenance or provenance["faradaic_efficiency"] != "user":
         warnings.append("faradaic_efficiency not provided by user — using a default; "

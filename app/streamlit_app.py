@@ -94,8 +94,39 @@ with st.sidebar:
     capex = st.slider("CAPEX total ($M)", 10.0, 200.0, 50.0, 5.0) * 1e6
     carbon_price = st.slider("Carbon price ($/kg CO₂)", 0.0, 3.0, 0.30, 0.05,
                              help="Feasibility threshold the MAC is compared against.")
+    # ------------------------------------------------------------ data inputs
+    # All three uploads live here, together, each saying what it is FOR and what
+    # it must CONTAIN. They were previously scattered — two in the sidebar, one
+    # buried inside a tab — which made it hard to see that the app has three
+    # independent data sources at all.
     st.divider()
-    uploaded = st.file_uploader("Load tier-tagged scenario (YAML)", type=["yaml", "yml"])
+    st.markdown("### Data inputs")
+    st.caption("Three independent sources. Each drives different tabs; none is "
+               "required to start.")
+
+    st.markdown("**1 · Scenario** — assumptions")
+    uploaded = st.file_uploader("Tier-tagged scenario (.yaml)",
+                                type=["yaml", "yml"], key="yaml_up")
+    st.caption("Plant, prices and grid, each with `value / std / tier / source`. "
+               "Overrides the sliders above. Drives: Cost breakdown, Viability "
+               "map, What matters most.")
+
+    st.markdown("**2 · Your measurements** — experimental")
+    ud_csv = st.file_uploader("Measurements (.csv)", type=["csv"], key="ud_csv")
+    st.caption("One row per catalyst you measured: FE, cell voltage, current "
+               "density. No model in between. Drives: Your measurements.")
+
+    st.markdown("**3 · DFT descriptors** — computed")
+    _dft_up = st.file_uploader("HEA workbook (.xlsx)", type=["xlsx"], key="dft")
+    st.caption("One sheet per adsorbed intermediate (*CO / *CHO / *COOH), each "
+               "row a site configuration plus its adsorption energy. Drives: "
+               "Predict from composition, Next DFT to run, Model reliability.")
+    _dft_int = st.selectbox(
+        "Intermediate — for 'Next DFT to run' & 'Model reliability' only",
+        ["CO", "CHO", "COOH"], key="dft_int",
+        help="Those two tabs study one intermediate at a time, so they need you "
+             "to pick which. 'Predict from composition' ignores it: the limiting "
+             "potential needs *CO and *COOH together, so it loads every sheet.")
 
 def slider_scenario():
     return Scenario(
@@ -296,17 +327,6 @@ def _load_hea(file_bytes, sheet):
     return X[m], y[m], [l for l, keep in zip(labels, m) if keep]
 
 
-st.sidebar.markdown("---")
-_dft_up = st.sidebar.file_uploader(
-    "Real DFT descriptors (HEA .xlsx: CO/CHO/COOH sheets)", type=["xlsx"], key="dft")
-_dft_int = st.sidebar.selectbox(
-    "Intermediate — for 'Next DFT to run' & 'Model reliability' only",
-    ["CO", "CHO", "COOH"], key="dft_int",
-    help="Those two tabs study one intermediate at a time, so they need you to "
-         "pick which. 'Predict from composition' ignores it: the limiting "
-         "potential needs *CO and *COOH together, so it loads every sheet.")
-st.sidebar.caption("'Predict from composition' uses **all** sheets regardless "
-                   "of this choice.")
 _dft = None
 if _dft_up is not None:
     try:
@@ -470,22 +490,24 @@ with t5:
 
 # ------------------------------------------------------- Your measurements (CSV)
 with t6:
-    st.markdown("**Check your own experiments / calculations**")
-    st.caption("Upload a CSV of your measurements. Recognised columns (any of): "
-               "material, product, FE (or %), cell voltage (V or mV), current density, "
-               "electricity price, grid intensity. Unmeasured inputs are filled from "
-               "sourced defaults and flagged. One row = one scenario.")
+    st.markdown("**Your measured catalysts, evaluated economically**")
+    st.caption("Recognised columns (any of): material, product, FE (or %), cell "
+               "voltage (V or mV), current density, electricity price, grid "
+               "intensity. Unmeasured inputs are filled from your loaded scenario "
+               "or from sourced defaults, and flagged. One row = one catalyst.")
     default_rxn = st.selectbox("Default product (used when a row has no 'product' column)",
                                ["co", "methanol", "formate"], key="ud_rxn")
-    up = st.file_uploader("Measurements CSV", type=["csv"], key="ud_csv")
 
-    with st.expander("No file? Try a small example"):
-        st.code("material,product,FE (%),cell voltage,current density\n"
-                "Ag-foam,CO,92,3.2,250\nAg-NP,CO,88,3.1,180\nCu-oxide,CO,74,3.6,120",
-                language="text")
+    if ud_csv is None:
+        st.info("Upload a **measurements .csv** in the sidebar (input 2) to use "
+                "this tab.")
+        with st.expander("What the file should look like"):
+            st.code("material,product,FE (%),cell voltage,current density\n"
+                    "Ag-foam,CO,92,3.2,250\nAg-NP,CO,88,3.1,180\nCu-oxide,CO,74,3.6,120",
+                    language="text")
 
-    if up is not None:
-        text = up.getvalue().decode("utf-8")
+    if ud_csv is not None:
+        text = ud_csv.getvalue().decode("utf-8")
         import csv as _csv, io as _io
         headers = next(_csv.reader(_io.StringIO(text)))
         mapping, unknown = map_columns(headers)
@@ -510,7 +532,7 @@ with t6:
             ev = res.scenario.evaluate()
             mac = ev["mac_usd_per_tonne_co2"]
             table.append({
-                "row": i,
+                "material": res.material_id or f"(row {i})",
                 "FE": round(res.scenario.faradaic_efficiency, 3),
                 "V_cell": round(res.scenario.cell_voltage, 2),
                 "net kg/kg": round(ev["net_abatement_kg_per_kg"], 3),
@@ -520,7 +542,9 @@ with t6:
             })
         st.dataframe(table, width='stretch', hide_index=True)
 
-        idx = st.number_input("Inspect row", 0, max(0, len(results) - 1), 0, key="ud_row")
+        _names = [f"{r.material_id or '(unnamed)'} — row {i}"
+                  for i, r in enumerate(results)]
+        idx = _names.index(st.selectbox("Inspect catalyst", _names, key="ud_row"))
         res = results[idx]
         if res.errors:
             for e in res.errors:

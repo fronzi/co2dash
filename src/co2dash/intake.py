@@ -77,6 +77,7 @@ class IntakeResult:
     provenance: Dict[str, str]              # field -> 'user' or 'default: <source>'
     warnings: List[str] = field(default_factory=list)
     errors: List[str] = field(default_factory=list)
+    material_id: str = ""                   # so a per-row verdict can name its subject
 
     @property
     def ok(self) -> bool:
@@ -222,7 +223,8 @@ def row_to_scenario(row: Dict[str, object], default_reaction: str = "co",
         release_fraction=vals["release_fraction"], rectifier_eff=vals["rectifier_eff"])
 
     return IntakeResult(scenario=scen, reaction_key=rkey,
-                        provenance=provenance, warnings=warnings, errors=errors)
+                        provenance=provenance, warnings=warnings, errors=errors,
+                        material_id=str(row.get("material_id", "") or ""))
 
 
 def read_csv(text_or_buffer) -> List[Dict[str, object]]:

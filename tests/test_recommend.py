@@ -22,6 +22,27 @@ def _cases():
     }
 
 
+def test_the_verdict_names_its_subject():
+    """The app renders a verdict in three places — the headline strip, the
+    recommendation panel, and one per uploaded row. Without a subject they are
+    word-for-word identical while describing different scenarios."""
+    base, reg = load_scenario(YAML)
+    plain = recommend(base, 0.30, registry=reg, n_mc=5000)
+    named = recommend(base, 0.30, registry=reg, n_mc=5000, subject="Ag-MEA (your row 0)")
+    assert plain.steps[0].startswith("Verdict:")
+    assert named.steps[0].startswith("Verdict for Ag-MEA (your row 0):")
+    assert named.subject == "Ag-MEA (your row 0)"
+
+
+def test_subject_appears_even_when_not_climate_positive():
+    import dataclasses as dc
+    base, reg = load_scenario(YAML)
+    dirty = dc.replace(base, grid_intensity=0.9)
+    r = recommend(dirty, 0.30, registry=reg, n_mc=5000, subject="the sidebar sliders")
+    assert r.verdict == "Not climate-positive"
+    assert "for the sidebar sliders" in r.steps[0]
+
+
 def test_recommendation_text_actually_varies_with_the_scenario():
     """Regression: every bullet used to be identical across scenarios except the
     first two -- the 'next candidate' line was static and the closing note

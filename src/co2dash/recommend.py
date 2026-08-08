@@ -58,6 +58,11 @@ class Recommendation:
     top_uncertainty_ST: float = 0.0
     sobol_reliable: bool = False
     sobol_reason: str = ""
+    # What this recommendation is ABOUT. The app renders a verdict in more than
+    # one place -- the headline strip, this panel, and one per uploaded row --
+    # and without a subject they are word-for-word identical while describing
+    # different scenarios.
+    subject: str = ""
     steps: List[str] = field(default_factory=list)
 
     @property
@@ -159,7 +164,8 @@ def _target_value(base: Scenario, field_name: str, carbon_price: float):
 
 def recommend(base: Scenario, carbon_price_usd_per_kg: float,
               registry=None, next_candidate: Optional[str] = None,
-              n_mc: int = 40_000, seed: int = 0) -> Recommendation:
+              n_mc: int = 40_000, seed: int = 0,
+              subject: str = "") -> Recommendation:
     """Produce a Recommendation for a scenario.
     `registry` (a ProvenanceRegistry) is used, if given, to derive MC
     distributions from data tiers; otherwise a generic ±spread is used."""
@@ -242,7 +248,7 @@ def recommend(base: Scenario, carbon_price_usd_per_kg: float,
         target_field=tgt_field, target_value=tgt_val, target_reachable=reachable,
         next_candidate=next_candidate,
         top_uncertainty=top_uncertainty, top_uncertainty_ST=top_ST,
-        sobol_reliable=sobol_reliable, sobol_reason=sobol_reason)
+        sobol_reliable=sobol_reliable, sobol_reason=sobol_reason, subject=subject)
     rec.steps = _compose(base, rec, carbon_price_usd_per_kg)
     return rec
 
@@ -251,12 +257,13 @@ def _compose(base: Scenario, r: Recommendation, cp: float) -> List[str]:
     s: List[str] = []
     cp_t = cp * 1000
     # 1. headline verdict
+    about = f" for {r.subject}" if r.subject else ""
     if r.verdict == "Not climate-positive":
-        s.append(f"This route is NOT climate-positive as configured "
+        s.append(f"Verdict{about}: NOT climate-positive as configured "
                  f"(P(removes CO₂)={r.p_net_positive:.0%}). Net abatement is "
                  f"{r.net_abatement:+.2f} kg CO₂/kg product — fix this before economics.")
     else:
-        s.append(f"Verdict: {r.verdict}. It removes CO₂ with probability "
+        s.append(f"Verdict{about}: {r.verdict}. It removes CO₂ with probability "
                  f"{r.p_net_positive:.0%}; MAC ≈ {r.mac_median:.0f} $/t "
                  f"(90% CI {r.mac_p05:.0f}–{r.mac_p95:.0f}); "
                  f"P(MAC < {cp_t:.0f} $/t) = {r.p_feasible:.0%}.")

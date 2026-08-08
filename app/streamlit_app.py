@@ -199,9 +199,13 @@ elif p_feas >= 0.15:
 else:
     status, vc = "Not feasible at this price", RED
 mac_med_t = "∞" if not np.isfinite(mc["mac_median"]) else f"{mc['mac_median']*1000:,.0f}"
+_hdr_subject = ("loaded YAML scenario" if registry is not None else "sidebar sliders")
 st.markdown(f"""
 <div class="verdict" style="--vc:{vc}">
-  <div class="verdict-status">{status}</div>
+  <div>
+    <div class="vstat-label">Verdict for the {_hdr_subject}</div>
+    <div class="verdict-status">{status}</div>
+  </div>
   <div class="verdict-stats">
     <div><div class="vstat-label">P(MAC &lt; price)</div><div class="vstat-value">{p_feas:.0%}</div></div>
     <div><div class="vstat-label">P(net &gt; 0)</div><div class="vstat-value">{p_net:.0%}</div></div>
@@ -259,12 +263,18 @@ cards = [
 st.markdown('<div class="kpi-row">' + "".join(cards) + '</div>', unsafe_allow_html=True)
 
 # --------------------------------------------------------------------- next steps
-with st.expander("🧭 Recommended next steps (plain-language synthesis)", expanded=False):
-    st.caption("Runs the MC verdict, Sobol sensitivity, breakeven and target search, "
-               "then tells you what to improve, by how much, and what to compute next.")
+SCENARIO_LABEL = ("the loaded YAML scenario" if registry is not None
+                  else "the sidebar slider settings")
+
+with st.expander(f"🧭 Recommended next steps — for {SCENARIO_LABEL}", expanded=False):
+    st.caption(f"Elaborates the headline verdict above, which describes "
+               f"**{SCENARIO_LABEL}**. Adds the Sobol sensitivity, the breakeven "
+               f"grid and the target value each lever must reach. The 'Your data' "
+               f"tab has its own separate verdict, one per uploaded row.")
     if st.button("Generate recommendation", key="rec_btn"):
         with st.spinner("Analysing…"):
-            rec = recommend(base, carbon_price, registry=registry, n_mc=20_000)
+            rec = recommend(base, carbon_price, registry=registry, n_mc=20_000,
+                            subject=SCENARIO_LABEL)
         for s in rec.steps:
             st.markdown(f"- {s}")
 
@@ -505,9 +515,11 @@ with t6:
         with st.expander("Provenance (user vs sourced default)"):
             for k, v in res.provenance.items():
                 st.markdown(f"- `{k}`: {v}")
-        if st.button("Recommended next steps for this row", key="ud_rec"):
+        _who = res.material_id or f"row {idx}"
+        if st.button(f"Recommended next steps for {_who}", key="ud_rec"):
             with st.spinner("Analysing…"):
-                rec = recommend(res.scenario, carbon_price, n_mc=20_000)
+                rec = recommend(res.scenario, carbon_price, n_mc=20_000,
+                                subject=f"{_who} (your row {idx})")
             for s in rec.steps:
                 st.markdown(f"- {s}")
 

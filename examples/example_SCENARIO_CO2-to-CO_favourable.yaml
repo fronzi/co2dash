@@ -1,0 +1,84 @@
+# =====================================================================
+# CO2 -> CO electrolysis — FAVOURABLE but defensible scenario.
+#
+# Companion to example_SCENARIO_CO2-to-CO.yaml (which reads "Marginal").
+# Nothing here is invented: every performance value is attested in the
+# literature already shipped with this repo. What makes this one land on
+# "Feasible" is a COMBINATION of best-in-class values that no single
+# published cell has demonstrated all at once.
+#
+# Read the four lines marked [DOES THE WORK] before quoting anything.
+# =====================================================================
+
+reaction: co
+m_h2: 0.0
+c_h2: 0.0
+disc_rate: 0.08
+lifetime_yr: 20
+rectifier_eff: 0.95
+
+# --- performance ---
+faradaic_efficiency:
+  value: 0.95
+  std: 0.03
+  tier: LIT_EXTRACTED
+  source: "Ag flow cell 98% FE at 866 mA/cm2 (Bhargava 2020); Ag MEA 93% at 223 mA/cm2 (J. Lee 2021), both via Osorio-Tejada 2024 T2. 0.95 sits between them."
+cell_voltage:
+  value: 2.2
+  std: 0.20
+  tier: LIT_EXTRACTED
+  source: "Ag MEA 2.2 V at 223 mA/cm2 (J. Lee 2021, Osorio-Tejada 2024 T2) — the lowest cell voltage in that table. [DOES THE WORK]"
+
+# --- economics ---
+capex_total:
+  value: 8.0e7
+  std: 3.0e7
+  tier: ESTIMATED
+  source: "Scaled to 40 kt/yr with a 0.6 scaling exponent from the 20 kt/yr base case. Costed design still absent — treat as wide."
+annual_production_kg:
+  value: 4.0e7
+  std: 8.0e6
+  tier: ESTIMATED
+  source: "Assumed 40 kt/yr — double the base case. Halves the CAPEX-per-kg term. [DOES THE WORK]"
+opex_fix_per_yr:
+  value: 4.0e6
+  std: 1.5e6
+  tier: ESTIMATED
+  source: "Fixed O&M ~5% of CAPEX/yr at this scale"
+c_co2:
+  value: 0.04
+  std: 0.015
+  tier: LIT_EXTRACTED
+  source: "Low end of point-source capture, ~39 $/t (PNNL 2021-23)"
+c_elec:
+  value: 0.03
+  std: 0.010
+  tier: ESTIMATED
+  source: "Co-located firmed renewable PPA. Below the 0.04 $/kWh competitiveness threshold (Curr. Opin. 2022) — achievable in favourable markets, not generic. [DOES THE WORK]"
+lcop_conventional:
+  value: 0.60
+  std: 0.10
+  tier: LIT_EXTRACTED
+  source: "Merchant CO ~0.6 $/kg (Jouny, Luc & Jiao 2018)"
+
+# --- environment ---
+grid_intensity:
+  value: 0.02
+  std: 0.010
+  tier: LIT_EXTRACTED
+  source: "Hydro / nuclear lifecycle ~0.01-0.02 kgCO2e/kWh (IPCC). Requires a genuinely clean supply, not a grid average."
+e_capture:
+  value: 0.08
+  std: 0.03
+  tier: ESTIMATED
+  source: "Capture parasitic emissions with renewable-powered capture"
+e_process:
+  value: 0.04
+  std: 0.02
+  tier: ESTIMATED
+  source: "Other process emissions per kg product"
+release_fraction:
+  value: 0.0
+  std: 0.10
+  tier: ESTIMATED
+  source: "CO routed entirely to durable products (polycarbonates, polyketones). The strongest single assumption here: phi=1 instead would remove almost the whole utilisation credit. [DOES THE WORK]"

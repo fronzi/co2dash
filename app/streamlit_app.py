@@ -468,7 +468,18 @@ with t6:
         if unknown:
             st.caption(f"Ignored (not used): {', '.join(unknown)}")
 
-        results = ingest_table(text, default_rxn)
+        # pass the loaded scenario as the fill source: the CSV supplies what it
+        # measured, the YAML supplies the plant and the grid. Without this the
+        # rows were evaluated against generic defaults — a different plant from
+        # the one driving the verdict above, silently.
+        results = ingest_table(text, default_rxn, base=base if registry is not None else None)
+        if registry is not None:
+            st.caption("Unmeasured fields are taken from your loaded YAML scenario, "
+                       "not from generic defaults. See the provenance panel below.")
+        else:
+            st.caption("No YAML loaded: unmeasured fields come from generic sourced "
+                       "defaults. Load a scenario to evaluate your rows against your "
+                       "own plant and grid instead.")
         table = []
         for i, res in enumerate(results):
             ev = res.scenario.evaluate()

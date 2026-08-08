@@ -4,6 +4,55 @@ import pytest
 from co2dash import map_columns, row_to_scenario, read_csv, ingest_table
 from co2dash.intake import normalise_units, resolve_reaction
 
+_CSV = "material,product,FE (%),cell voltage\nAg-MEA,CO,93,2.2\n"
+
+
+def _loaded_scenario():
+    """The favourable scenario, chosen because the base one happens to carry the
+    same values as GENERIC_DEFAULTS — so it could not distinguish 'filled from
+    the YAML' from 'filled from the defaults'."""
+    from conftest import SCENARIO_CO_FAVOURABLE, example
+    from co2dash import load_scenario
+    return load_scenario(example(SCENARIO_CO_FAVOURABLE))[0]
+
+
+def test_loaded_scenario_fills_unmeasured_fields_instead_of_generic_defaults():
+    """Regression: the 'Your data' tab evaluated rows against generic defaults
+    even when a YAML scenario was loaded, so the plant and grid behind each row
+    differed from the ones driving the verdict on screen — silently."""
+    base = _loaded_scenario()
+    plain = ingest_table(_CSV, "co")[0].scenario
+    linked = ingest_table(_CSV, "co", base=base)[0].scenario
+
+    assert linked.grid_intensity == pytest.approx(base.grid_intensity)
+    assert linked.release_fraction == pytest.approx(base.release_fraction)
+    assert linked.annual_production_kg == pytest.approx(base.annual_production_kg)
+    assert plain.grid_intensity != pytest.approx(base.grid_intensity)
+
+
+def test_measured_columns_still_win_over_the_loaded_scenario():
+    base = _loaded_scenario()
+    r = row_to_scenario({"faradaic_efficiency": 93.0, "cell_voltage": 2.2,
+                         "product": "co"}, "co", base=base)
+    assert r.scenario.faradaic_efficiency == pytest.approx(0.93)
+    assert r.scenario.cell_voltage == pytest.approx(2.2)
+    assert r.provenance["faradaic_efficiency"] == "user"
+
+
+def test_provenance_names_the_scenario_as_the_source():
+    base = _loaded_scenario()
+    r = ingest_table(_CSV, "co", base=base)[0]
+    assert r.provenance["grid_intensity"].startswith("scenario:")
+    assert r.provenance["cell_voltage"] == "user"
+    r2 = ingest_table(_CSV, "co")[0]
+    assert r2.provenance["grid_intensity"].startswith("default:")
+
+
+def test_behaviour_without_a_base_is_unchanged():
+    a = ingest_table(_CSV, "co")[0].scenario
+    b = ingest_table(_CSV, "co", base=None)[0].scenario
+    assert a == b
+
 
 def test_map_columns_aliases_and_unknown():
     m, unknown = map_columns(["Catalyst", "FE (%)", "Cell Voltage", "notes"])

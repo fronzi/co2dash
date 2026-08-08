@@ -30,6 +30,9 @@ def example(name: str) -> str:
 # Canonical names of the shipped examples. Update HERE if a file is renamed --
 # every test resolves through these constants, so one edit fixes all of them.
 SCENARIO_CO = "example_SCENARIO_CO2-to-CO.yaml"
+# Deliberately differs from GENERIC_DEFAULTS on grid, scale and release fraction,
+# so a test can tell "came from the YAML" apart from "came from the defaults".
+SCENARIO_CO_FAVOURABLE = "example_SCENARIO_CO2-to-CO_favourable.yaml"
 SCENARIO_METHANOL = "example_SCENARIO_methanol.yaml"
 LITERATURE_CO_CSV = "example_YOUR-DATA-tab_AgCO_literature.csv"
 MEASUREMENTS_CSV = "example_YOUR-DATA-tab_measurements.csv"

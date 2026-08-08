@@ -140,9 +140,21 @@ def resolve_reaction(row: Dict[str, object], default_key: str = "co") -> str:
 
 
 # ------------------------------------------------------------------ build
-def row_to_scenario(row: Dict[str, object], default_reaction: str = "co") -> IntakeResult:
+def row_to_scenario(row: Dict[str, object], default_reaction: str = "co",
+                    base: Optional[Scenario] = None) -> IntakeResult:
     """Build a validated Scenario from a single mapped row (keys already
-    canonical). Missing fields are filled from sourced defaults."""
+    canonical).
+
+    Fill order for anything the CSV does not supply:
+        1. the user's row               -> provenance "user"
+        2. `base`, if given             -> provenance "scenario: <label>"
+        3. the generic sourced defaults -> provenance "default: <source>"
+
+    `base` is normally the Scenario loaded from a tier-tagged YAML. Without it,
+    a user who had carefully declared a plant and a grid in YAML would still see
+    their CSV rows evaluated against the generic defaults — a different plant
+    from the one on screen, with no indication that the two disagreed.
+    """
     warnings: List[str] = []
     errors: List[str] = []
 
@@ -180,13 +192,18 @@ def row_to_scenario(row: Dict[str, object], default_reaction: str = "co") -> Int
               "c_co2", "c_elec", "lcop_conventional", "grid_intensity",
               "e_capture", "e_process", "release_fraction", "rectifier_eff"]
     for f in needed:
-        if f not in vals:
-            q = defaults.get(f)
-            if q is None:
-                errors.append(f"no default available for required field {f}")
-                continue
-            vals[f] = q.value
-            provenance[f] = f"default: {q.source}"
+        if f in vals:
+            continue
+        if base is not None and hasattr(base, f):
+            vals[f] = float(getattr(base, f))
+            provenance[f] = "scenario: from the loaded YAML"
+            continue
+        q = defaults.get(f)
+        if q is None:
+            errors.append(f"no default available for required field {f}")
+            continue
+        vals[f] = q.value
+        provenance[f] = f"default: {q.source}"
 
     if "faradaic_efficiency" not in provenance or provenance["faradaic_efficiency"] != "user":
         warnings.append("faradaic_efficiency not provided by user — using a default; "
@@ -224,6 +241,12 @@ def read_csv(text_or_buffer) -> List[Dict[str, object]]:
     return rows
 
 
-def ingest_table(text_or_buffer, default_reaction: str = "co") -> List[IntakeResult]:
-    """Full path: CSV -> list of validated IntakeResults (one per row)."""
-    return [row_to_scenario(r, default_reaction) for r in read_csv(text_or_buffer)]
+def ingest_table(text_or_buffer, default_reaction: str = "co",
+                 base: Optional[Scenario] = None) -> List[IntakeResult]:
+    """Full path: CSV -> list of validated IntakeResults (one per row).
+
+    Pass `base` (e.g. the Scenario from a loaded YAML) so that economic and
+    environmental context comes from that scenario rather than the generic
+    defaults; the CSV then supplies only what it actually measures.
+    """
+    return [row_to_scenario(r, default_reaction, base) for r in read_csv(text_or_buffer)]

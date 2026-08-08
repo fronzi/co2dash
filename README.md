@@ -13,8 +13,8 @@ Three ways in, one economic engine:
 
 | entry point | you supply | the model supplies |
 |---|---|---|
-| **Composition** | an alloy formula + a DFT workbook | adsorption energies → limiting potential → cell voltage |
-| **Your data** | a CSV of measured FE / voltage / current | nothing — you already have the KPIs |
+| **Predict from composition** | an alloy formula + a DFT workbook | adsorption energies → limiting potential → cell voltage |
+| **Your measurements** | a CSV of measured FE / voltage / current | nothing — you already have the KPIs |
 | **Sliders / YAML** | assumptions, tier-tagged | nothing — they are your hypotheses |
 
 All three converge on the same engine: specific energy → LCOP → net abatement →
@@ -97,7 +97,7 @@ ceiling is the **descriptor set**, not the regressor.
   and save a local file you then load. A silent network failure on a hosted app
   would produce a number of unknown provenance. The Grid-region selector reads
   static sourced profiles, not a live API.
-* **The Active-learning tab ranks by predictive std**, which is not the same as
+* **The "Next DFT to run" tab ranks by predictive std**, which is not the same as
   the EVOI acquisition in `active_learning.py`. That module is available
   programmatically; the tab does not currently use it.
 * **Defaults exist only on the CSV path.** A YAML scenario must be complete —
@@ -111,7 +111,7 @@ ceiling is the **descriptor set**, not the regressor.
 
 ```bash
 pip install -e ".[ui]"                      # add ,connectors for the fetch scripts
-pytest                                      # 207 tests
+pytest                                      # 221 tests
 streamlit run app/streamlit_app.py          # the dashboard
 ```
 

@@ -289,7 +289,7 @@ def _compose(base: Scenario, r: Recommendation, cp: float) -> List[str]:
         else:
             s.append(f"The dominant lever is {lab} (Sobol ST={r.dominant_ST:.2f}), but "
                      f"improving it alone does not reach viability at {cp_t:.0f} $/t — "
-                     f"you likely need two levers together (use the Feasibility envelope).")
+                     f"you likely need two levers together (see the Viability map tab).")
 
     # 4. which candidate to compute next
     if r.next_candidate:

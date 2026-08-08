@@ -36,8 +36,8 @@ three regions:
    tier-tagged YAML scenario.
 2. **Top of the main area** — the **verdict banner** and **KPI cards**: the
    headline answer.
-3. **Tabs** — six analysis views (Economics & climate, Feasibility envelope,
-   Sensitivity, Active learning, Calibration, Your data).
+3. **Tabs** — seven analysis views, grouped by which input drives them (Cost breakdown, Viability map, What matters most,
+   Your measurements, Predict from composition, Next DFT to run, Model reliability).
 
 Everything recomputes live as you change an input (the Monte-Carlo runs ~40,000
 samples in ~30 ms; heavier views take ~1 s).
@@ -98,34 +98,34 @@ economics by **P(MAC<price)** and the MAC distribution (§5.1).
 
 ## 5. The tabs
 
-### 5.1 Economics & climate
+### 5.1 Cost breakdown
 - **Cost waterfall** — where each dollar of LCOP comes from (CO₂ feedstock,
   electricity, capital, fixed O&M, H₂ if applicable). Identifies the cost driver.
 - **MAC distribution** — the *full* Monte-Carlo histogram of the MAC, with the
   carbon-price line and the shaded feasible region. **Read the spread, not just the
   median:** a wide P05–P95 means the verdict is uncertain (usually CAPEX-driven).
 
-### 5.2 Feasibility envelope
+### 5.2 Viability map
 Pick two levers (X and Y axes: FE, cell voltage, electricity price, grid intensity,
 CAPEX). The map shows, over that 2-D space, where the route becomes viable, with a
 white boundary line. **Use it to read a target:** e.g. "at this grid intensity, FE
 must reach ≈0.8 to cross into the viable region." Turns "make it better" into a
 concrete number.
 
-### 5.3 Sensitivity
+### 5.3 What matters most
 A Sobol **tornado** ranks which input most changes the MAC (total-effect index ST).
 **Use it to decide what to work on:** if FE tops the bar, invest in selectivity; if
 grid intensity tops it, the bottleneck is your energy source, not the chemistry —
 no catalyst work will fix it.
 
-### 5.4 Active learning
+### 5.4 Next DFT to run
 Given a set of candidate materials (descriptors), the table ranks **which to
 compute/test next** by an acquisition score that balances how promising and how
 uncertain each is. The top row is the most informative next DFT run — it maximises
 what you learn about viability per calculation. (In the demo, candidates are
 generated; with real descriptors, load them via the data pipeline.)
 
-### 5.5 Calibration
+### 5.5 Model reliability
 Checks whether the surrogate's **uncertainty is trustworthy**. The reliability
 diagram plots nominal vs empirical coverage against the diagonal; points **below**
 the line = over-confident. The **temperature s** rescales the model's error bars
@@ -134,7 +134,7 @@ produces honest probabilities downstream. The demo lets you slide a model's
 reported spread to see the diagram bend away from the diagonal and the fix pull it
 back.
 
-### 5.6 Your data
+### 5.6 Your measurements
 Upload a CSV of your own measurements (columns like material, product, FE or %,
 cell voltage in V or mV, current density). The tool:
 - matches your column names by alias and shows what it recognised,

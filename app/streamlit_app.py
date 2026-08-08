@@ -124,7 +124,7 @@ if region_code is not None:
     st.sidebar.caption(f"Grid: **{_e['name']}** — {_q.value:.3f} kgCO₂/kWh  \nSource: {_q.source}")
 
 # --------------------------------------------------- DFT-driven cell voltage
-# Set from the Composition tab (session state, so it survives the rerun). Every
+# Set from the 'Predict from composition' tab (session state, so it survives the rerun). Every
 # performance field records its origin; the verdict strip renders that origin so
 # an assumed input can never be mistaken for a predicted one.
 KPI_ORIGIN = {"faradaic_efficiency": "assumed", "cell_voltage": "assumed"}
@@ -269,7 +269,7 @@ SCENARIO_LABEL = ("the loaded YAML scenario" if registry is not None
 with st.expander(f"🧭 Recommended next steps — for {SCENARIO_LABEL}", expanded=False):
     st.caption(f"Elaborates the headline verdict above, which describes "
                f"**{SCENARIO_LABEL}**. Adds the Sobol sensitivity, the breakeven "
-               f"grid and the target value each lever must reach. The 'Your data' "
+               f"grid and the target value each lever must reach. The 'Your measurements' "
                f"tab has its own separate verdict, one per uploaded row.")
     if st.button("Generate recommendation", key="rec_btn"):
         with st.spinner("Analysing…"):
@@ -300,12 +300,13 @@ st.sidebar.markdown("---")
 _dft_up = st.sidebar.file_uploader(
     "Real DFT descriptors (HEA .xlsx: CO/CHO/COOH sheets)", type=["xlsx"], key="dft")
 _dft_int = st.sidebar.selectbox(
-    "Intermediate — for Active learning & Calibration only",
+    "Intermediate — for 'Next DFT to run' & 'Model reliability' only",
     ["CO", "CHO", "COOH"], key="dft_int",
     help="Those two tabs study one intermediate at a time, so they need you to "
-         "pick which. The Composition tab ignores this: the limiting potential "
-         "needs *CO and *COOH together, so it loads every sheet.")
-st.sidebar.caption("The Composition tab uses **all** sheets regardless of this choice.")
+         "pick which. 'Predict from composition' ignores it: the limiting "
+         "potential needs *CO and *COOH together, so it loads every sheet.")
+st.sidebar.caption("'Predict from composition' uses **all** sheets regardless "
+                   "of this choice.")
 _dft = None
 if _dft_up is not None:
     try:
@@ -313,9 +314,22 @@ if _dft_up is not None:
     except Exception as _e:
         st.sidebar.error(f"Could not read descriptors: {_e}")
 
-t1, t2, t3, t4, t5, t6, t7 = st.tabs(["Economics & climate", "Feasibility envelope",
-                                      "Sensitivity", "Active learning", "Calibration",
-                                      "Your data", "Composition"])
+# Tabs are grouped by WHICH INPUT DRIVES THEM, because that was the recurring
+# confusion: three different data sources were interleaved with nothing saying so.
+#   1-3  the scenario (YAML or sliders) — always available
+#   4    your experimental CSV
+#   5-7  the DFT workbook — inactive until you upload it
+# The unpacking order below re-orders the display without moving any code: the
+# `with tN:` blocks further down keep their original numbering.
+t1, t2, t3, t6, t7, t4, t5 = st.tabs([
+    "Cost breakdown",            # t1 — scenario
+    "Viability map",             # t2 — scenario
+    "What matters most",         # t3 — scenario
+    "Your measurements",         # t6 — your CSV
+    "Predict from composition",  # t7 — DFT workbook
+    "Next DFT to run",           # t4 — DFT workbook
+    "Model reliability",         # t5 — DFT workbook
+])
 
 with t1:
     c1, c2 = st.columns(2)
@@ -395,7 +409,7 @@ with t4:
         idx = rng.permutation(len(yv))
         ntr = max(20, int(0.6 * len(yv)))
         tr, pool = idx[:ntr], idx[ntr:]
-        # fit_evidence, not fit: the same model the Composition tab uses. With a
+        # fit_evidence, not fit: the same model 'Predict from composition' uses. With a
         # hardcoded beta the reported sigma is a constructor default rather than
         # a result, and the "uncertainty (eV)" column below would be inflated.
         surr = BayesianLinearSurrogate().fit_evidence(Xk[tr], yv[tr])
@@ -449,11 +463,12 @@ with t5:
                         f'n={rep.n_train + rep.n_cal + rep.n_test}. On the dotted line '
                         f'= calibrated; below = over-confident; above = error bars '
                         f'wider than needed. Assessed on the same surrogate the '
-                        f'Composition tab uses (hyperparameters fitted by evidence '
+                        f'"Predict from composition" tab uses (hyperparameters '
+                        f'fitted by evidence '
                         f'maximisation), so this measures the uncertainty you '
                         f'actually consume.</span>', unsafe_allow_html=True)
 
-# --------------------------------------------------------------------- Your data
+# ------------------------------------------------------- Your measurements (CSV)
 with t6:
     st.markdown("**Check your own experiments / calculations**")
     st.caption("Upload a CSV of your measurements. Recognised columns (any of): "

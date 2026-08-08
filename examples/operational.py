@@ -16,7 +16,7 @@ from co2dash import (load_scenario, propagate_mc, BayesianLinearSurrogate,
                      coverage_report, miscalibration_area, TemperatureScaler,
                      SplitConformal, CalibratedSurrogate, rank_candidates, Candidate)
 
-YAML = os.path.join(os.path.dirname(os.path.abspath(__file__)), "scenario_methanol.yaml")
+YAML = os.path.join(os.path.dirname(os.path.abspath(__file__)), "example_SCENARIO_methanol.yaml")
 CARBON_PRICE = 2.0  # $/kg CO2, illustrative (see demo.py note)
 
 # ---- piece 1: load scenario + provenance --------------------------------------

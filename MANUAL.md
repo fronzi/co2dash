@@ -60,7 +60,7 @@ samples in ~30 ms; heavier views take ~1 s).
 | **Load tier-tagged scenario (YAML)** | file | — | full scenario | Upload a sourced scenario (every value with a data tier + citation). **Overrides the sliders** and enables tier-based uncertainty. |
 
 **Sliders vs YAML.** Sliders are for "what-if" exploration and give a generic
-uncertainty band. A YAML scenario (e.g. `examples/scenario_co_real.yaml`) is for a
+uncertainty band. A YAML scenario (e.g. `examples/example_SCENARIO_CO2-to-CO.yaml`) is for a
 defensible analysis: each field carries a *data tier* (computed / lab-validated /
 literature / estimated) that sets the Monte-Carlo noise, and a source string.
 

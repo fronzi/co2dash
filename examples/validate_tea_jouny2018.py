@@ -93,7 +93,7 @@ def main():
         print(f"   {k:18s}{got:12.3f}{ref:12.3f}{abs(got-ref)/ref:8.1%}")
     try:
         from co2dash import load_scenario
-        base, _ = load_scenario(os.path.join(os.path.dirname(__file__), "scenario_co_real.yaml"))
+        base, _ = load_scenario(os.path.join(os.path.dirname(__file__), "example_SCENARIO_CO2-to-CO.yaml"))
         chk = co2dash_lcop_in_reported_range(base)
         print(f"   co2dash real CO scenario LCOP = {chk['lcop_per_t']:.0f} $/t; paper reported "
               f"range {chk['range'][0]:.0f}-{chk['range'][1]:.0f} $/t -> in range: {chk['in_range']}")

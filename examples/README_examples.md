@@ -2,7 +2,7 @@
 
 | File | Load in… | What it is | Provenance |
 |---|---|---|---|
-| `scenario_co_real.yaml` | Sidebar → "Load tier-tagged scenario (YAML)" | A full, sourced CO2→CO scenario (performance + economics + environment) | Literature / public databases; every field carries a tier + source |
+| `example_SCENARIO_CO2-to-CO.yaml` | Sidebar → "Load tier-tagged scenario (YAML)" | A full, sourced CO2→CO scenario (performance + economics + environment) | Literature / public databases; every field carries a tier + source |
 | `your_data_example.csv` | Tab "Your data" | Six real Ag→CO experiments (measured FE, voltage, current density) | Osorio-Tejada et al. 2024, Table 2 (public) |
 | ACS Catalysis HEA `.xlsx` (`cs2c03675_si_002.xlsx`) | Sidebar → "Real DFT descriptors" → tabs "Calibration" / "Active learning" | DFT adsorption energies (*CO/*CHO/*COOH) on FeCoNiCuMo HEA | ACS Catalysis 2023 SI — download from Figshare (NOT bundled: it is third-party data) |
 

@@ -4,7 +4,7 @@ for your own experimental data).
 
     python examples/calibrate_literature.py [path/to/fe_dataset.csv]
 
-Default dataset: examples/literature_fe_co.csv — 7 real, cited CO2->CO studies
+Default dataset: examples/example_YOUR-DATA-tab_AgCO_literature.csv — 7 real, cited CO2->CO studies
 (Osorio-Tejada 2024, Table 2). Features used: cell_voltage, current_density;
 target: measured FE.
 
@@ -54,7 +54,7 @@ def loo_rmse(X, y):
 
 def main():
     path = sys.argv[1] if len(sys.argv) > 1 else os.path.join(
-        os.path.dirname(__file__), "literature_fe_co.csv")
+        os.path.dirname(__file__), "example_YOUR-DATA-tab_AgCO_literature.csv")
     X, y, ids = load_features(path)
     print(f"Loaded {len(y)} real records from {os.path.basename(path)}")
     print(f"  features: [cell_voltage, current_density]; target: FE "

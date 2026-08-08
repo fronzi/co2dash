@@ -80,7 +80,7 @@ its stated "electricity ≈ 27% of the $962/t UCOP". All other reference values 
 stated verbatim in the paper (6.82 and 8.53 kWh/kg, 3791 m², $71.9/t, $962/t).
 
 Non-circular corroboration: co2dash's real CO scenario
-(`examples/scenario_co_real.yaml`) gives **LCOP $770/t**, inside the paper's
+(`examples/example_SCENARIO_CO2-to-CO.yaml`) gives **LCOP $770/t**, inside the paper's
 reported electrolysis band of **$570–1392/t**. A further literature datapoint —
 an Energy & Fuels 2023 industrial-electrolysis TEA — reports CO $0.449/kg and
 formic acid $0.468/kg, bracketing the lower end of the same range.

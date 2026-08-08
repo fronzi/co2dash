@@ -289,8 +289,13 @@ def _load_hea(file_bytes, sheet):
 st.sidebar.markdown("---")
 _dft_up = st.sidebar.file_uploader(
     "Real DFT descriptors (HEA .xlsx: CO/CHO/COOH sheets)", type=["xlsx"], key="dft")
-_dft_int = st.sidebar.selectbox("Descriptor target (intermediate)",
-                                ["CO", "CHO", "COOH"], key="dft_int")
+_dft_int = st.sidebar.selectbox(
+    "Intermediate — for Active learning & Calibration only",
+    ["CO", "CHO", "COOH"], key="dft_int",
+    help="Those two tabs study one intermediate at a time, so they need you to "
+         "pick which. The Composition tab ignores this: the limiting potential "
+         "needs *CO and *COOH together, so it loads every sheet.")
+st.sidebar.caption("The Composition tab uses **all** sheets regardless of this choice.")
 _dft = None
 if _dft_up is not None:
     try:
@@ -380,7 +385,10 @@ with t4:
         idx = rng.permutation(len(yv))
         ntr = max(20, int(0.6 * len(yv)))
         tr, pool = idx[:ntr], idx[ntr:]
-        surr = BayesianLinearSurrogate().fit(Xk[tr], yv[tr])
+        # fit_evidence, not fit: the same model the Composition tab uses. With a
+        # hardcoded beta the reported sigma is a constructor default rather than
+        # a result, and the "uncertainty (eV)" column below would be inflated.
+        surr = BayesianLinearSurrogate().fit_evidence(Xk[tr], yv[tr])
         mean, sd = surr.predict(Xk[pool])
         order = np.argsort(-sd)
         tbl = pd.DataFrame({
@@ -389,10 +397,12 @@ with t4:
             "uncertainty (eV)": np.round(sd[order], 3),
         }).head(15)
         st.dataframe(tbl, width='stretch', hide_index=True)
-        st.markdown(f'<span class="cap">Real ACS Catalysis FeCoNiCuMo HEA DFT · '
-                    f'target = *{_dft_int} adsorption energy · trained on {len(tr)} '
-                    f'alloys · {len(pool)} candidates ranked by predictive uncertainty '
-                    f'(most informative next calculation on top).</span>',
+        st.markdown(f'<span class="cap">Real HEA DFT · target = *{_dft_int} adsorption '
+                    f'energy · trained on {len(tr)} configurations · {len(pool)} ranked '
+                    f'by predictive uncertainty (most informative next calculation on '
+                    f'top). Note these candidates are rows held out of THIS file, so '
+                    f'their DFT answer already exists — the ranking demonstrates the '
+                    f'loop rather than recommending unknown materials.</span>',
                     unsafe_allow_html=True)
 
 with t5:
@@ -405,7 +415,8 @@ with t5:
         X, yv, labels = _dft
         Xk = X[:, X.std(0) > 1e-9]
         rep = calibrate_and_evaluate(
-            Xk, yv, surrogate_factory=lambda Xt, yt: BayesianLinearSurrogate().fit(Xt, yt),
+            Xk, yv,
+            surrogate_factory=lambda Xt, yt: BayesianLinearSurrogate().fit_evidence(Xt, yt),
             alpha=0.1, seed=0)
         lv = list(rep.levels)
         before = [rep.coverage_before[l] for l in lv]
@@ -416,14 +427,21 @@ with t5:
                             width='stretch')
         with c2:
             st.metric("Temperature scale s", f"{rep.temperature_s:.2f}",
-                      help=">1 inflates an over-confident std; <1 shrinks under-confident")
+                      help=">1 inflates an over-confident std; <1 shrinks under-confident. "
+                           "s near 1 means the model was already honest and the gate "
+                           "found nothing to correct — a pass, not a failure.")
+            if abs(rep.temperature_s - 1.0) < 0.10:
+                st.success("s ≈ 1: already calibrated, no correction needed.")
             st.metric("Miscalibration", f"{rep.miscal_before:.3f}",
                       delta=f"{rep.miscal_after - rep.miscal_before:+.3f}",
                       delta_color="inverse")
             st.markdown(f'<span class="cap">Real HEA DFT · *{_dft_int} · '
                         f'n={rep.n_train + rep.n_cal + rep.n_test}. On the dotted line '
-                        f'= calibrated; below = over-confident.</span>',
-                        unsafe_allow_html=True)
+                        f'= calibrated; below = over-confident; above = error bars '
+                        f'wider than needed. Assessed on the same surrogate the '
+                        f'Composition tab uses (hyperparameters fitted by evidence '
+                        f'maximisation), so this measures the uncertainty you '
+                        f'actually consume.</span>', unsafe_allow_html=True)
 
 # --------------------------------------------------------------------- Your data
 with t6:

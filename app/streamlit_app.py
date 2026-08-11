@@ -69,7 +69,11 @@ h1, h2, h3 { font-family: 'Space Grotesk', sans-serif; letter-spacing:-0.01em; c
 st.markdown(CSS, unsafe_allow_html=True)
 
 GREEN, AMBER, RED, TEAL, INK = "#1E8E5A", "#C77D17", "#C0392B", "#0E7C86", "#14242E"
-RX = {"Methanol (6e⁻)": RXN_METHANOL, "Formate (2e⁻)": RXN_FORMATE, "CO (2e⁻)": RXN_CO}
+# CO first, deliberately: it is the default the app opens on. Methanol needs 6
+# electrons and ~26 kWh/kg, so at the default sliders its net abatement is
+# NEGATIVE and the app used to open on "Not climate-positive" — which reads as a
+# broken dashboard rather than as a true statement about a hard route.
+RX = {"CO (2e⁻)": RXN_CO, "Formate (2e⁻)": RXN_FORMATE, "Methanol (6e⁻)": RXN_METHANOL}
 
 # --------------------------------------------------------------------- sidebar
 with st.sidebar:
@@ -231,8 +235,21 @@ st.markdown('<div class="hero-eyebrow">CO₂ utilisation · techno-economic & en
 st.markdown(f'<span class="cap">{_build_stamp()}</span>', unsafe_allow_html=True)
 
 p_feas, p_net = mc["p_mac_below_carbon_price"], mc["p_net_positive"]
+_why = ""
 if p_net < 0.5:
     status, vc = "Not climate-positive", RED
+    # A bare red label reads as a broken dashboard. Name the binding constraint:
+    # the electricity carbon almost always is it, and the breakeven says by how
+    # much. Without this the only recourse is to move sliders at random.
+    _bg = r.get("breakeven_grid_intensity", float("nan"))
+    _why = (f"The plant emits more CO₂ than it stores: net abatement is "
+            f"{r['net_abatement_kg_per_kg']:+.2f} kg per kg of product, because "
+            f"it needs {e_elec:.1f} kWh/kg. ")
+    if np.isfinite(_bg):
+        _why += (f"Your grid is {base.grid_intensity:.3f} kgCO₂/kWh; it must be "
+                 f"below **{_bg:.3f}** for this route to remove CO₂ at all. ")
+    _why += ("Higher-electron products (methanol, 6e⁻) are the hardest — try "
+             "CO (2e⁻), a cleaner grid, a lower cell voltage or a higher FE.")
 elif p_feas >= 0.5:
     status, vc = "Feasible", GREEN
 elif p_feas >= 0.15:
@@ -253,6 +270,9 @@ st.markdown(f"""
     <div><div class="vstat-label">MAC median</div><div class="vstat-value">{mac_med_t} $/t</div></div>
   </div>
 </div>""", unsafe_allow_html=True)
+
+if _why:
+    st.warning(_why)
 
 # provenance strip: which KPIs are model-driven and which are assumed
 _dft_kpis = sorted(k for k, v in KPI_ORIGIN.items() if v == "DFT")

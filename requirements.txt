@@ -7,9 +7,16 @@ SALib>=1.4
 pyyaml>=6.0
 pandas>=2.0
 openpyxl>=3.1
-# >=1.46: the app uses width="stretch"/"content", added June 2025 to replace
-# use_container_width. A looser pin lets a host resolve to a version where every
-# chart call raises TypeError — which is invisible locally on a recent install.
-streamlit>=1.46
+# >=1.61.1 for TWO independent reasons, both of which break Community Cloud
+# while the app still runs locally:
+#   1. width="stretch"/"content" (June 2025) replaced use_container_width; on an
+#      older Streamlit every chart call raises TypeError.
+#   2. Streamlit/Starlette incompatibility reported 5 Aug 2026 —
+#      "TypeError: GZipResponder.__init__() missing 1 required keyword-only
+#      argument: 'thread_minimum_size'". It fails during Streamlit's own startup,
+#      before the app file is even reached, so no app-side change can fix it.
+#      Resolved in 1.61.1.
+#      discuss.streamlit.io/t/.../122132
+streamlit>=1.61.1
 plotly>=5.18
 .
